@@ -107,10 +107,10 @@ def compute_inverses(arch, A, G, gamma):
         pi = compute_pi(A[in_name], G[out_name])
         
         A_damp = gamma * pi
-        A_inv[in_name] = np.linalg.inv(A[in_name] + A_damp * np.eye(A.shape[0]))
+        A_inv[in_name] = np.linalg.inv(A[in_name] + A_damp * np.eye(A[in_name].shape[0]))
         
         G_damp = gamma / pi
-        G_inv[out_name] = np.linalg.inv(G[out_name] + G_damp * np.eye(G.shape[0]))
+        G_inv[out_name] = np.linalg.inv(G[out_name] + G_damp * np.eye(G[out_name].shape[0]))
         
     return A_inv, G_inv
 
@@ -290,7 +290,7 @@ def update_gamma(state, arch, output_model, X, T, config):
         config['gamma_min'])
     gamma_more = onp.minimum(
         curr_gamma * config['gamma_boost']**config['gamma_update_interval'],
-        config['gamma_min'])
+        config['gamma_max'])
     gammas = [gamma_less, curr_gamma, gamma_more]
     
     grad_w = compute_gradient(
