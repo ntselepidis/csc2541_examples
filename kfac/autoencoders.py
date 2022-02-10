@@ -1,5 +1,6 @@
 from jax import nn, numpy as np
 from jax.experimental import stax
+from tensorboardX import SummaryWriter
 import numpy as onp
 import time
 
@@ -86,6 +87,7 @@ def squared_error(logits, T):
     return np.sum((y-T)**2)
 
 def run_training(X_train, X_test, arch, config):
+    writer = SummaryWriter()
     nll_fn = kfac_util.BernoulliModel.nll_fn
     state = kfac.kfac_init(arch, kfac_util.BernoulliModel, X_train, X_train, config)
     for i in range(config['max_iter']):
@@ -95,49 +97,62 @@ def run_training(X_train, X_test, arch, config):
         print('Step', i)
         print('Time:', time.time() - t0)
         print('Alpha:', state['coeffs'][0])
+        writer.add_scalar('data/alpha', state['coeffs'][0], i)
         if i > 0:
             print('Beta:', state['coeffs'][1])
+            writer.add_scalar('data/beta', state['coeffs'][1], i)
         print('Quadratic decrease:', state['quad_dec'])
+        writer.add_scalar('data/quadratic_decrease', state['quad_dec'], i)
 
         if i % 20 == 0:
             print()
             cost = kfac.compute_cost(arch, nll_fn, state['w'], X_train, X_train, 
                 config['weight_cost'], config['chunk_size'])
             print('Training objective:', cost)
+            writer.add_scalar('data/training_objective', cost, i)
             cost = kfac.compute_cost(
                 arch, nll_fn, state['w_avg'], X_train, X_train, 
                 config['weight_cost'], config['chunk_size'])
             print('Training objective (averaged):', cost)
+            writer.add_scalar('data/training_objective_avg', cost, i)
 
             cost = kfac.compute_cost(arch, nll_fn, state['w'], X_test, X_test, 
                 config['weight_cost'], config['chunk_size'])
             print('Test objective:', cost)
+            writer.add_scalar('data/test_objective', cost, i)
             cost = kfac.compute_cost(
                 arch, nll_fn, state['w_avg'], X_test, X_test, 
                 config['weight_cost'], config['chunk_size'])
             print('Test objective (averaged):', cost)
+            writer.add_scalar('data/test_objective_avg', cost, i)
 
             print()
             cost = kfac.compute_cost(arch, squared_error, state['w'], X_train, X_train, 
                 0., config['chunk_size'])
             print('Training error:', cost)
+            writer.add_scalar('data/training_error', cost, i)
             cost = kfac.compute_cost(arch, squared_error, state['w_avg'], X_train, X_train, 
                 0., config['chunk_size'])
             print('Training error (averaged):', cost)
+            writer.add_scalar('data/training_error_avg', cost, i)
 
             cost = kfac.compute_cost(arch, squared_error, state['w'], X_test, X_test, 
                 0., config['chunk_size'])
             print('Test error:', cost)
+            writer.add_scalar('data/test_error', cost, i)
             cost = kfac.compute_cost(arch, squared_error, state['w_avg'], X_test, X_test, 
                 0., config['chunk_size'])
             print('Test error (averaged):', cost)
+            writer.add_scalar('data/test_error_avg', cost, i)
             print()
             
 
         if i % config['lambda_update_interval'] == 0:
             print('New lambda:', state['lambda'])
+            writer.add_scalar('data/lambda', state['lambda'], i)
         if i % config['gamma_update_interval'] == 0:
             print('New gamma:', state['gamma'])
+            writer.add_scalar('data/gamma', state['gamma'], i)
         print()
 
-
+    writer.close()
