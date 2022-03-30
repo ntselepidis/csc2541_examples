@@ -63,8 +63,8 @@ def estimate_covariances_chunk(apply_fn, param_info, output_model, net_params, X
         ds = act_grads[out_name]
         G[out_name] = ds.T @ ds
 
-        a_hom_mean[in_name] = np.mean(a_hom, axis=1)
-        ds_mean[out_name] = np.mean(ds, axis=1)
+        a_hom_mean[in_name] = np.sum(a_hom, axis=1) / np.sqrt(a_hom.shape[1])
+        ds_mean[out_name] = np.sum(ds, axis=1) / np.sqrt(ds.shape[1])
 
     a_hom_mean_stacked = np.vstack([a_hom_mean[in_name] for in_name in a_hom_mean])
     ds_mean_stacked = np.vstack([ds_mean[out_name] for out_name in ds_mean])
@@ -321,7 +321,7 @@ def compute_natgrad_correction(state, arch, grad_w, F_coarse, gamma):
     for _, out_name in arch.param_info:
         grad_W, grad_b = grad_dict[out_name]
         grad_Wb = np.vstack([grad_W, grad_b.reshape((1, -1))])
-        grad_Wb_mean[out_name] = grad_Wb.mean()
+        grad_Wb_mean[out_name] = np.sum(grad_Wb) / np.sqrt( onp.prod(grad_Wb.shape) )
 
     grad_w_coarse = np.vstack([grad_Wb_mean[name] for name in grad_Wb_mean])
 
@@ -338,7 +338,7 @@ def compute_natgrad_correction(state, arch, grad_w, F_coarse, gamma):
     natgrad_corr_dict = {out_name: 0.0 for _, out_name in arch.param_info}
     for index, (_, out_name) in enumerate(arch.param_info):
         W_shape, b_shape = grad_dict[out_name][0].shape, grad_dict[out_name][1].shape
-        val = natgrad_w_coarse[index] / ( onp.prod(W_shape) + onp.prod(b_shape) )
+        val = natgrad_w_coarse[index] / np.sqrt( onp.prod(W_shape) + onp.prod(b_shape) )
         natgrad_corr_dict[out_name] = (val*np.ones(W_shape), val*np.ones(b_shape))
 
     natgrad_corr_w = arch.flatten(natgrad_corr_dict)
@@ -529,7 +529,7 @@ def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
         if len(pk) == 0: continue
         npk = onp.prod(pk[0].shape) + onp.prod(pk[1].shape)
         blk[index+1] = blk[index] + npk
-        Z[perm[key], blk[index]:blk[index+1]] = 1. / npk
+        Z[perm[key], blk[index]:blk[index+1]] = 1. / onp.sqrt(npk)
         index = index + 1
 
     state['Z'] = np.asarray(Z)
