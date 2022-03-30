@@ -1,3 +1,4 @@
+import argparse
 import scipy.io
 
 import autoencoders
@@ -21,7 +22,7 @@ def get_architecture():
 def get_config():
     return autoencoders.default_config()
 
-def run():
+def run(args):
     try:
         obj = scipy.io.loadmat('digs3pts_1.mat')
     except:
@@ -33,11 +34,16 @@ def run():
     config = get_config()
     arch = get_architecture()
 
+    config['experiment'] = 'curves'
+    config['optimizer'] = args.optimizer
     autoencoders.run_training(X_train, X_test, arch, config)
 
 
 
 if __name__ == '__main__':
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--optimizer', default='kfac', type=str)
+    args = parser.parse_args()
+    run(args)
 
 

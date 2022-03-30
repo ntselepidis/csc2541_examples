@@ -1,6 +1,7 @@
 from jax import nn, numpy as np
 from jax.experimental import stax
 from tensorboardX import SummaryWriter
+import matplotlib.pyplot as plt
 import numpy as onp
 import time
 
@@ -86,8 +87,30 @@ def squared_error(logits, T):
     y = nn.sigmoid(logits)
     return np.sum((y-T)**2)
 
+def plot_to_tensorboard(writer, optimizer, mat, comment, step):
+    if 'woodbury' in optimizer:
+        mat = mat - np.diag(np.diag(mat))
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    cax = ax.matshow(mat)
+    fig.colorbar(cax)
+    fig.canvas.draw()
+    writer.add_figure(comment, fig, step)
+    plt.close(fig)
+
+# def plot_natgrad_to_tensorboard(writer, natgrad_w, natgrad_w_corr, comment, step):
+#     fig, axs = plt.subplots(2)
+#     fig.suptitle(comment)
+#     axs[0].plot(natgrad_w)
+#     axs[1].plot(natgrad_w_corr)
+#     axs[0].set_yscale('log')
+#     axs[1].set_yscale('log')
+#     fig.canvas.draw()
+#     writer.add_figure(comment, fig, step)
+#     plt.close(fig)
+
 def run_training(X_train, X_test, arch, config):
-    writer = SummaryWriter()
+    writer = SummaryWriter(comment='_' + config['experiment'] + '_' + config['optimizer'])
     nll_fn = kfac_util.BernoulliModel.nll_fn
     state = kfac.kfac_init(arch, kfac_util.BernoulliModel, X_train, X_train, config)
     for i in range(config['max_iter']):
@@ -96,6 +119,8 @@ def run_training(X_train, X_test, arch, config):
 
         print('Step', i)
         print('Time:', time.time() - t0)
+        print('Batch size:', state['batch_size'])
+        writer.add_scalar('data/batch_size', state['batch_size'], i)
         print('Alpha:', state['coeffs'][0])
         writer.add_scalar('data/alpha', state['coeffs'][0], i)
         if i > 0:
@@ -154,5 +179,19 @@ def run_training(X_train, X_test, arch, config):
             print('New gamma:', state['gamma'])
             writer.add_scalar('data/gamma', state['gamma'], i)
         print()
+
+        print('natgrad_w_pre_norm', state['natgrad_w_pre_norm'])
+        writer.add_scalar('data/natgrad_w_pre_norm', state['natgrad_w_pre_norm'], i)
+
+        print('natgrad_w_corr_norm', state['natgrad_w_corr_norm'])
+        writer.add_scalar('data/natgrad_w_corr_norm', state['natgrad_w_corr_norm'], i)
+
+        if i % config['cov_update_interval'] == 0:
+            plot_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_coarse']), 'a. F_coarse', i)
+            plot_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_hat_coarse']), 'b. F_hat_coarse', i)
+            plot_to_tensorboard(writer, config['optimizer'], onp.abs(state['F_coarse'] - state['F_hat_coarse']), 'c. abs(F_coarse - F_hat_coarse)', i)
+
+        #if (i+1) % 20 == 0:
+        #    plot_natgrad_to_tensorboard(writer, onp.asarray(state['natgrad_w_pre']), onp.asarray(state['natgrad_w_corr']), 'kfac natgrad and correction', i)
 
     writer.close()

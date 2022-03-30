@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import tensorflow_datasets as tfds
 
@@ -53,7 +54,7 @@ def get_config():
 
 
 
-def run():
+def run(args):
     mnist_data, info = tfds.load(name="mnist", batch_size=-1, with_info=True)
     mnist_data = tfds.as_numpy(mnist_data)
     train_data, test_data = mnist_data['train'], mnist_data['test']
@@ -63,9 +64,14 @@ def run():
     config = get_config()
     arch = get_architecture()
 
+    config['experiment'] = 'mnist'
+    config['optimizer'] = args.optimizer
     autoencoders.run_training(X_train, X_test, arch, config)
 
 if __name__ == '__main__':
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--optimizer', default='kfac', type=str)
+    args = parser.parse_args()
+    run(args)
 
 
