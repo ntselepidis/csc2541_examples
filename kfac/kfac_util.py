@@ -1,7 +1,7 @@
 from collections import namedtuple
 from jax import grad, numpy as np, random, jvp, nn
 from jax.flatten_util import ravel_pytree
-from jax.ops import index_update
+#from jax.ops import index_update
 from jax.tree_util import tree_map
 
 
@@ -91,6 +91,7 @@ def sparse_init(num_conn=15, stdev=1.):
         row_idxs = random.shuffle(k1, row_idxs)[:num_conn_, :].ravel()
         col_idxs = np.outer(np.ones(num_conn_), np.arange(out_dim)).astype(np.uint32).ravel()
         vals = random.normal(k2, shape=(num_conn_*out_dim,)) * stdev
-        return index_update(W, (row_idxs, col_idxs), vals)
+        #return index_update(W, (row_idxs, col_idxs), vals)
+        return W.at[row_idxs, col_idxs].set(vals)
     return init
 
