@@ -36,6 +36,7 @@ def run(args):
 
     config['experiment'] = 'curves'
     config['optimizer'] = args.optimizer
+    config['random_seed'] = args.random_seed
     autoencoders.run_training(X_train, X_test, arch, config)
 
 
@@ -43,6 +44,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--optimizer', default='kfac', type=str)
+    parser.add_argument('--random_seed', default=0, type=int)
     args = parser.parse_args()
     run(args)
 

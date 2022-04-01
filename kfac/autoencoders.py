@@ -78,6 +78,8 @@ def default_config():
     config['gamma_min'] = onp.sqrt(config['weight_cost'])
     
     config['param_timescale'] = 100
+
+    config['random_seed'] = 0
     
     return config
 
@@ -110,9 +112,9 @@ def plot_to_tensorboard(writer, optimizer, mat, comment, step):
 #     plt.close(fig)
 
 def run_training(X_train, X_test, arch, config):
-    writer = SummaryWriter(comment='_' + config['experiment'] + '_' + config['optimizer'] + '_sqrt')
+    writer = SummaryWriter(comment='_' + config['experiment'] + '_' + config['optimizer'] + '_sqrt_' + str(config['random_seed']))
     nll_fn = kfac_util.BernoulliModel.nll_fn
-    state = kfac.kfac_init(arch, kfac_util.BernoulliModel, X_train, X_train, config)
+    state = kfac.kfac_init(arch, kfac_util.BernoulliModel, X_train, X_train, config, config['random_seed'])
     for i in range(config['max_iter']):
         t0 = time.time()
         state = kfac.kfac_iter(state, arch, kfac_util.BernoulliModel, X_train, X_train, config)
