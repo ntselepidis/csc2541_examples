@@ -66,12 +66,14 @@ def run(args):
 
     config['experiment'] = 'mnist'
     config['optimizer'] = args.optimizer
+    config['comment'] = args.comment
     config['random_seed'] = args.random_seed
     autoencoders.run_training(X_train, X_test, arch, config)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--optimizer', default='kfac', type=str)
+    parser.add_argument('--comment', default='default', type=str)
     parser.add_argument('--random_seed', default=0, type=int)
     args = parser.parse_args()
     run(args)
