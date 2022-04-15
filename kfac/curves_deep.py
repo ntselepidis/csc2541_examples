@@ -42,7 +42,7 @@ def run(args):
     config = get_config()
     arch = get_architecture()
 
-    config['experiment'] = 'curves_deep'
+    config['experiment'] = 'curves-deep'
     config['optimizer'] = args.optimizer
     config['comment'] = args.comment
     config['random_seed'] = args.random_seed
