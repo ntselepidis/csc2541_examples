@@ -323,7 +323,7 @@ def compute_update(coeffs, dirs):
     return ans
 
 # Two-Level K-FAC (sum of inverses)
-def compute_natgrad_correction(state, arch, grad_w, F_coarse, gamma):
+def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
     # compute coarse grad
     grad_dict = arch.unflatten(grad_w)
     grad_Wb_mean = {out_name: 0.0 for _, out_name in arch.param_info}
@@ -356,7 +356,7 @@ def compute_natgrad_correction(state, arch, grad_w, F_coarse, gamma):
     return natgrad_corr_w
 
 # Two-Level K-FAC (inverse of sum, non-singular (v1) / singular (v2) F_coarse)
-def compute_natgrad_woodbury(state, arch, grad_w, F_coarse, gamma, variant):
+def compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma, variant):
 
     # Unpack utils
     Z = state['Z']
@@ -377,27 +377,16 @@ def compute_natgrad_woodbury(state, arch, grad_w, F_coarse, gamma, variant):
     # Zero-out diagonal of F_coarse
     F_coarse = F_coarse - np.diag(np.diag(F_coarse))
 
-    y = compute_natgrad_from_eigs(
-        arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], gamma)
-
     if variant == 1:
         IF = np.linalg.inv(F_coarse) +  Z @ invF_dot_Zt
-        yhat = np.linalg.solve(IF, (Z @ y))
+        natgrad_w_hat = np.linalg.solve(IF, (Z @ natgrad_w))
     else:
         IF = np.eye(F_coarse.shape[0]) + F_coarse @ ( Z @ invF_dot_Zt )
-        yhat = np.linalg.solve(IF, F_coarse @ (Z @ y))
+        natgrad_w_hat = np.linalg.solve(IF, F_coarse @ (Z @ natgrad_w))
 
-    #z = compute_natgrad_from_eigs(
-    #    arch, Z.T @ yhat, state['A_eig'], state['G_eig'], state['pi'], gamma)
+    natgrad_corr = -invF_dot_Zt @ natgrad_w_hat
 
-    z = invF_dot_Zt @ yhat
-
-    natgrad_w = y - z
-
-    nrm1 = np.linalg.norm(y)
-    nrm2 = np.linalg.norm(z)
-
-    return natgrad_w, nrm1, nrm2
+    return natgrad_corr
 
 def update_gamma(state, arch, output_model, X, T, config):
     curr_gamma = state['gamma']
@@ -416,17 +405,12 @@ def update_gamma(state, arch, output_model, X, T, config):
     results = []
     for gamma in gammas:
 
-        if 'woodbury' not in config['optimizer']:
-            # KFAC or KFAC-CGC
-            natgrad_w = compute_natgrad_from_eigs(
-                arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], gamma)
-            if 'cgc' in config['optimizer']:
-                natgrad_corr = compute_natgrad_correction(state, arch, grad_w, state['F_coarse'], gamma)
-                natgrad_w = natgrad_w + natgrad_corr
-        else:
-            # KFAC Woodbury
-            variant = int(config['optimizer'][-1])
-            natgrad_w, _, _ = compute_natgrad_woodbury(state, arch, grad_w, state['F_coarse'], gamma, variant)
+        natgrad_w = compute_natgrad_from_eigs(
+            arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], gamma)
+
+        if config['has_correction']:
+            natgrad_corr = config['natgrad_correction_fn'](state, arch, grad_w, natgrad_w, state['F_coarse'], gamma)
+            natgrad_w = natgrad_w + natgrad_corr
 
         prev_update = state['update']
         coeffs, _ = compute_step_coeffs(
@@ -484,31 +468,48 @@ def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
     state['A_eig'], state['G_eig'], state['pi'] = compute_eigs(
         arch, state['A'], state['G'])
 
-    nlayers = len(arch.param_info)
-    nparams = len(state['w'])
-    Z = onp.zeros((nlayers, nparams), dtype=onp.float32)
-    blk = onp.zeros((nlayers+1,), dtype=onp.uint32)
+    config['has_correction'] = False
 
-    index = 0
-    perm = {}
-    for key in params.keys():
-        if len(params[key]) == 0: continue
-        perm[key] = index
-        index = index + 1
+    if 'cgc' in config['optimizer']:
+        config['has_correction'] = True
+        config['natgrad_correction_fn'] = \
+            lambda state, arch, grad_w, natgrad_w, F_coarse, gamma: \
+                compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
+    elif 'woodbury' in config['optimizer']:
+        config['has_correction'] = True
+        variant = int(config['optimizer'][-1])
+        config['natgrad_correction_fn'] = \
+            lambda state, arch, grad_w, natgrad_w, F_coarse, gamma: \
+                compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma, variant)
+    else:
+        pass
 
-    index = 0
-    for key in sorted(params.keys()):
-        pk = params[key]
-        if len(pk) == 0: continue
-        npk = onp.prod(pk[0].shape) + onp.prod(pk[1].shape)
-        blk[index+1] = blk[index] + npk
-        Z[perm[key], blk[index]:blk[index+1]] = 1. / scale_fn(npk)
-        index = index + 1
+    if config['has_correction']:
+        nlayers = len(arch.param_info)
+        nparams = len(state['w'])
+        Z = onp.zeros((nlayers, nparams), dtype=onp.float32)
+        blk = onp.zeros((nlayers+1,), dtype=onp.uint32)
 
-    state['Z'] = np.asarray(Z)
-    state['ZZt'] = np.asarray(Z@Z.T)
-    state['perm'] = perm
-    state['blk'] = blk
+        index = 0
+        perm = {}
+        for key in params.keys():
+            if len(params[key]) == 0: continue
+            perm[key] = index
+            index = index + 1
+
+        index = 0
+        for key in sorted(params.keys()):
+            pk = params[key]
+            if len(pk) == 0: continue
+            npk = onp.prod(pk[0].shape) + onp.prod(pk[1].shape)
+            blk[index+1] = blk[index] + npk
+            Z[perm[key], blk[index]:blk[index+1]] = 1. / scale_fn(npk)
+            index = index + 1
+
+        state['Z'] = np.asarray(Z)
+        state['ZZt'] = np.asarray(Z@Z.T)
+        state['perm'] = perm
+        state['blk'] = blk
 
     return state
 
@@ -551,22 +552,15 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         arch, output_model, state['w'], X_batch, T_batch,
         config['weight_cost'], config['chunk_size'])
 
-    if 'woodbury' not in config['optimizer']:
-        # KFAC or KFAC-CGC
-        natgrad_w = compute_natgrad_from_eigs(
-            arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], state['gamma'])
-        state['natgrad_w_pre_norm'] = np.linalg.norm(natgrad_w)
-        state['natgrad_w_corr_norm'] = 0.
-        if 'cgc' in config['optimizer']:
-            natgrad_corr = compute_natgrad_correction(state, arch, grad_w, state['F_coarse'], state['gamma'])
-            state['natgrad_w_corr_norm'] = np.linalg.norm(natgrad_corr)
-            natgrad_w = natgrad_w + natgrad_corr
-    else:
-        # KFAC Woodbury
-        variant = int(config['optimizer'][-1])
-        natgrad_w, nrm1, nrm2 = compute_natgrad_woodbury(state, arch, grad_w, state['F_coarse'], state['gamma'], variant)
-        state['natgrad_w_pre_norm'] = nrm1
-        state['natgrad_w_corr_norm'] = nrm2
+    natgrad_w = compute_natgrad_from_eigs(
+        arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], state['gamma'])
+    state['natgrad_w_pre_norm'] = np.linalg.norm(natgrad_w)
+    state['natgrad_w_corr_norm'] = 0.
+
+    if config['has_correction']:
+        natgrad_corr = config['natgrad_correction_fn'](state, arch, grad_w, natgrad_w, state['F_coarse'], state['gamma'])
+        state['natgrad_w_corr_norm'] = np.linalg.norm(natgrad_corr)
+        natgrad_w = natgrad_w + natgrad_corr
 
     # Determine the step size parameters using MVPs
     if 'update' in state:
