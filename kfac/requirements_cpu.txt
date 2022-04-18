@@ -1,0 +1,6 @@
+jax[cpu]
+tensorflow-cpu
+tensorflow-datasets
+tensorboardX
+matplotlib
+argparse
