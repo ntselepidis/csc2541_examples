@@ -388,6 +388,19 @@ def compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma,
 
     return natgrad_corr
 
+def compute_gammas(curr_gamma, step, config):
+    if step % config['gamma_update_interval'] == 0:
+        gamma_less = onp.maximum(
+            curr_gamma * config['gamma_drop']**config['gamma_update_interval'],
+            config['gamma_min'])
+        gamma_more = onp.minimum(
+            curr_gamma * config['gamma_boost']**config['gamma_update_interval'],
+            config['gamma_max'])
+        gammas = [gamma_less, curr_gamma, gamma_more]
+    else:
+        gammas = [curr_gamma]
+    return gammas
+
 def update_gamma(state, arch, output_model, X, T, config):
     curr_gamma = state['gamma']
     gamma_less = onp.maximum(
@@ -529,6 +542,11 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     idxs = random.permutation(key, np.arange(ndata))[:batch_size]
     X_batch, T_batch = X_train[idxs, :], T_train[idxs, :]
 
+    # Compute the gradient
+    grad_w = compute_gradient(
+        arch, output_model, state['w'], X_batch, T_batch,
+        config['weight_cost'], config['chunk_size'])
+
     # Update statistics by running backprop on the sampled targets
     if state['step'] % config['cov_update_interval'] == 0:
         batch_size_samp = get_sample_batch_size(batch_size, config)
@@ -542,38 +560,56 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     if state['step'] % config['eig_update_interval'] == 0:
         state['A_eig'], state['G_eig'], state['pi'] = compute_eigs(
             arch, state['A'], state['G'])
-        
+
     # Update gamma
-    if state['step'] % config['gamma_update_interval'] == 0:
-        state['gamma'] = update_gamma(state, arch, output_model, X_batch, T_batch, config)
+    gammas = compute_gammas(state['gamma'], state['step'], config)
+    natgrad_w_pre_norm = [0. for _ in range(len(gammas))]
+    natgrad_w_corr_norm = [0. for _ in range(len(gammas))]
+    coeffs = [[] for _ in range(len(gammas))]
+    quad_dec = [[] for _ in range(len(gammas))]
+    update = [[] for _ in range(len(gammas))]
+    new_w = [[] for _ in range(len(gammas))]
+    results = []
 
-    # Compute the gradient and approximate natural gradient
-    grad_w = compute_gradient(
-        arch, output_model, state['w'], X_batch, T_batch,
-        config['weight_cost'], config['chunk_size'])
+    for idx, gamma in enumerate(gammas):
 
-    natgrad_w = compute_natgrad_from_eigs(
-        arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], state['gamma'])
-    state['natgrad_w_pre_norm'] = np.linalg.norm(natgrad_w)
-    state['natgrad_w_corr_norm'] = 0.
+        # Compute the approximate natural gradient
+        natgrad_w = compute_natgrad_from_eigs(
+            arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], gamma)
+        natgrad_w_pre_norm[idx] = np.linalg.norm(natgrad_w)
 
-    if config['has_correction']:
-        natgrad_corr = config['natgrad_correction_fn'](state, arch, grad_w, natgrad_w, state['F_coarse'], state['gamma'])
-        state['natgrad_w_corr_norm'] = np.linalg.norm(natgrad_corr)
-        natgrad_w = natgrad_w + natgrad_corr
+        if config['has_correction']:
+            natgrad_corr = config['natgrad_correction_fn'](
+                    state, arch, grad_w, natgrad_w, state['F_coarse'], gamma)
+            natgrad_w_corr_norm[idx] = np.linalg.norm(natgrad_corr)
+            natgrad_w = natgrad_w + natgrad_corr
 
-    # Determine the step size parameters using MVPs
-    if 'update' in state:
-        prev_update = state['update']
-        dirs = [-natgrad_w, prev_update]
-    else:
-        dirs = [-natgrad_w]
-    state['coeffs'], state['quad_dec'] = compute_step_coeffs(
-        arch, output_model, state['w'], X_batch, T_batch, dirs,
-        grad_w, config['weight_cost'], state['lambda'], config['chunk_size'])
-    state['update'] = compute_update(state['coeffs'], dirs)
-    state['w'] = state['w'] + state['update']
-    
+        # Determine the step size parameters using MVPs
+        if 'update' in state:
+            prev_update = state['update']
+            dirs = [-natgrad_w, prev_update]
+        else:
+            dirs = [-natgrad_w]
+        coeffs[idx], quad_dec[idx] = compute_step_coeffs(
+            arch, output_model, state['w'], X_batch, T_batch, dirs,
+            grad_w, config['weight_cost'], state['lambda'], config['chunk_size'])
+        update[idx] = compute_update(coeffs[idx], dirs)
+        new_w[idx] = state['w'] + update[idx]
+
+        results.append(compute_cost(
+            arch, output_model.nll_fn, new_w[idx], X_batch, T_batch,
+            config['weight_cost'], config['chunk_size']))
+
+    # Store values for best_idx in state
+    best_idx = onp.argmin(results)
+    state['gamma'] = gammas[best_idx]
+    state['natgrad_w_pre_norm'] = natgrad_w_pre_norm[best_idx]
+    state['natgrad_w_corr_norm'] = natgrad_w_corr_norm[best_idx]
+    state['coeffs'] = coeffs[best_idx]
+    state['quad_dec'] = quad_dec[best_idx]
+    state['update'] = update[best_idx]
+    state['w'] = new_w[best_idx]
+
     # Update lambda
     if state['step'] % config['lambda_update_interval'] == 0:
         state['lambda'], state['rho'] = update_lambda(
