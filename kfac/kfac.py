@@ -585,7 +585,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
             natgrad_w = natgrad_w + natgrad_corr
 
         # Determine the step size parameters using MVPs
-        if 'update' in state:
+        if config['use_momentum'] and 'update' in state:
             prev_update = state['update']
             dirs = [-natgrad_w, prev_update]
         else:

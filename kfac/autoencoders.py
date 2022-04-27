@@ -81,6 +81,7 @@ def default_config():
 
     config['comment'] = 'default'
     config['random_seed'] = 0
+    config['use_momentum'] = 1
     
     return config
 
@@ -113,7 +114,9 @@ def plot_to_tensorboard(writer, optimizer, mat, comment, step):
 #     plt.close(fig)
 
 def run_training(X_train, X_test, arch, config):
-    writer = SummaryWriter(comment='_' + config['experiment'] + '_' + config['optimizer'] + '_' + config['comment'] + '_' + str(config['random_seed']))
+    writer = SummaryWriter(comment='_' + config['experiment'] + '_' + \
+            config['optimizer'] + '_mom-' + str(config['use_momentum']) + '_' + \
+            config['comment'] + '_' + str(config['random_seed']))
     nll_fn = kfac_util.BernoulliModel.nll_fn
     state = kfac.kfac_init(arch, kfac_util.BernoulliModel, X_train, X_train, config, config['random_seed'])
     for i in range(config['max_iter']):
@@ -126,7 +129,7 @@ def run_training(X_train, X_test, arch, config):
         writer.add_scalar('data/batch_size', state['batch_size'], i)
         print('Alpha:', state['coeffs'][0])
         writer.add_scalar('data/alpha', state['coeffs'][0], i)
-        if i > 0:
+        if config['use_momentum'] and i > 0:
             print('Beta:', state['coeffs'][1])
             writer.add_scalar('data/beta', state['coeffs'][1], i)
         print('Quadratic decrease:', state['quad_dec'])
