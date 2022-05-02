@@ -355,6 +355,24 @@ def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
 
     return natgrad_corr_w
 
+# Computes P*v = (I - F*Q)*v or P.transpose()*v = (I - Q*F)*v
+def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, transpose):
+
+    # GGN-vector product
+    mvp = lambda v: kfac_util.gnhvp(lambda w: arch.net_apply(arch.unflatten(w), X),
+                                    lambda y: output_model.nll_fn(y, T), w, v)
+    # damped GGN-vector product
+    mvp_damp = kfac_util.dampen(mvp, gamma**2)
+
+    if not transpose:
+        Qv = compute_natgrad_correction_cgc(state, arch, v, F_coarse, gamma)
+        result = v - mvp_damp(Qv)
+    else:
+        QFv = compute_natgrad_correction_cgc(state, arch, mvp_damp(v), F_coarse, gamma)
+        result = v - QFv
+
+    return result
+
 # Two-Level K-FAC (inverse of sum, non-singular (v1) / singular (v2) F_coarse)
 def compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma, variant):
 
@@ -497,7 +515,9 @@ def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
     else:
         pass
 
-    if config['has_correction']:
+    flag = any(tag in config['optimizer'] for tag in ('m1', 'm2', 'm3'))
+
+    if config['has_correction'] or flag:
         nlayers = len(arch.param_info)
         nparams = len(state['w'])
         Z = onp.zeros((nlayers, nparams), dtype=onp.float32)
@@ -573,9 +593,21 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
 
     for idx, gamma in enumerate(gammas):
 
+        if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
+            P_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
+                    T_batch, state['F_coarse'], gamma, v, transpose=False)
+        else:
+            P_fn = lambda v: v
+
+        if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
+            Pt_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
+                    T_batch, state['F_coarse'], gamma, v, transpose=True)
+        else:
+            Pt_fn = lambda v: v
+
         # Compute the approximate natural gradient
-        natgrad_w = compute_natgrad_from_eigs(
-            arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], gamma)
+        natgrad_w = Pt_fn(compute_natgrad_from_eigs(
+            arch, P_fn(grad_w), state['A_eig'], state['G_eig'], state['pi'], gamma))
         natgrad_w_pre_norm[idx] = np.linalg.norm(natgrad_w)
 
         if config['has_correction']:
