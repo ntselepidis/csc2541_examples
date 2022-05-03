@@ -40,6 +40,7 @@ def run(args):
     config['comment'] = args.comment
     config['random_seed'] = args.random_seed
     config['use_momentum'] = args.use_momentum
+    config['init_lambda'] = args.init_lambda
     autoencoders.run_training(X_train, X_test, arch, config)
 
 
@@ -50,6 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('--comment', default='default', type=str)
     parser.add_argument('--random_seed', default=0, type=int)
     parser.add_argument('--use_momentum', default=1, type=int, choices=[0, 1])
+    parser.add_argument('--init_lambda', default=150, type=float)
     args = parser.parse_args()
     run(args)
 
