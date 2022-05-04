@@ -582,7 +582,11 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
             arch, state['A'], state['G'])
 
     # Update gamma
-    gammas = compute_gammas(state['gamma'], state['step'], config)
+    if config['adapt_gamma']:
+        gammas = compute_gammas(state['gamma'], state['step'], config)
+    else:
+        gammas = [np.sqrt(state['lambda'] + config['weight_cost'])]
+
     natgrad_w_pre_norm = [0. for _ in range(len(gammas))]
     natgrad_w_corr_norm = [0. for _ in range(len(gammas))]
     coeffs = [[] for _ in range(len(gammas))]

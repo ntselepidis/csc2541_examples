@@ -82,6 +82,7 @@ def default_config():
     config['comment'] = 'default'
     config['random_seed'] = 0
     config['use_momentum'] = 1
+    config['adapt_gamma'] = 1
     
     return config
 
@@ -116,7 +117,8 @@ def plot_to_tensorboard(writer, optimizer, mat, comment, step):
 def run_training(X_train, X_test, arch, config):
     writer = SummaryWriter(comment='_' + config['experiment'] + '_' + \
             config['optimizer'] + '_mom-' + str(config['use_momentum']) + \
-            '_init-lambda-' + str(int(config['init_lambda'])) + '_' + \
+            '_init-lambda-' + str(int(config['init_lambda'])) + \
+            '_adapt-gamma-' + str(int(config['adapt_gamma'])) + '_' + \
             config['comment'] + '_' + str(config['random_seed']))
     nll_fn = kfac_util.BernoulliModel.nll_fn
     state = kfac.kfac_init(arch, kfac_util.BernoulliModel, X_train, X_train, config, config['random_seed'])
