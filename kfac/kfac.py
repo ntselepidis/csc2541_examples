@@ -360,7 +360,7 @@ def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, transpose):
 
     # GGN-vector product
     mvp = lambda v: kfac_util.gnhvp(lambda w: arch.net_apply(arch.unflatten(w), X),
-                                    lambda y: output_model.nll_fn(y, T), w, v)
+                                    lambda y: output_model.nll_fn(y, T), w, v) / X.shape[0]
     # damped GGN-vector product
     mvp_damp = kfac_util.dampen(mvp, gamma**2)
 
