@@ -83,6 +83,8 @@ def default_config():
     config['random_seed'] = 0
     config['use_momentum'] = 1
     config['adapt_gamma'] = 1
+    config['conjgrad_tol'] = 5e-4
+    config['conjgrad_maxiter'] = 100
     
     return config
 
@@ -115,6 +117,8 @@ def plot_to_tensorboard(writer, optimizer, mat, comment, step):
 #     plt.close(fig)
 
 def run_training(X_train, X_test, arch, config):
+    if 'conjgrad' in config['optimizer']:
+        config['use_momentum'] = 0
     writer = SummaryWriter(comment='_' + config['experiment'] + '_' + \
             config['optimizer'] + '_mom-' + str(config['use_momentum']) + \
             '_init-lambda-' + str(int(config['init_lambda'])) + \
@@ -137,6 +141,10 @@ def run_training(X_train, X_test, arch, config):
             writer.add_scalar('data/beta', state['coeffs'][1], i)
         print('Quadratic decrease:', state['quad_dec'])
         writer.add_scalar('data/quadratic_decrease', state['quad_dec'], i)
+
+        if 'conjgrad' in config['optimizer']:
+            print('CG niters:', state['conjgrad_niters'])
+            writer.add_scalar('data/conjgrad_niters', state['conjgrad_niters'], i)
 
         if i % 20 == 0:
             print()
@@ -189,11 +197,11 @@ def run_training(X_train, X_test, arch, config):
             writer.add_scalar('data/gamma', state['gamma'], i)
         print()
 
-        print('natgrad_w_pre_norm', state['natgrad_w_pre_norm'])
-        writer.add_scalar('data/natgrad_w_pre_norm', state['natgrad_w_pre_norm'], i)
+        #print('natgrad_w_pre_norm', state['natgrad_w_pre_norm'])
+        #writer.add_scalar('data/natgrad_w_pre_norm', state['natgrad_w_pre_norm'], i)
 
-        print('natgrad_w_corr_norm', state['natgrad_w_corr_norm'])
-        writer.add_scalar('data/natgrad_w_corr_norm', state['natgrad_w_corr_norm'], i)
+        #print('natgrad_w_corr_norm', state['natgrad_w_corr_norm'])
+        #writer.add_scalar('data/natgrad_w_corr_norm', state['natgrad_w_corr_norm'], i)
 
         if i % config['cov_update_interval'] == 0:
             plot_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_coarse']), 'a. F_coarse', i)

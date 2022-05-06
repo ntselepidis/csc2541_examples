@@ -1,5 +1,6 @@
 from jax import grad, jit, numpy as np, random, vjp, jvp
 from jax.scipy.linalg import eigh
+from jax.scipy.sparse.linalg import cg
 import numpy as onp
 
 
@@ -597,28 +598,46 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
 
     for idx, gamma in enumerate(gammas):
 
-        if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
-            P_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
-                    T_batch, state['F_coarse'], gamma, v, transpose=False)
+        def precon(grad_w):
+            if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
+                P_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
+                        T_batch, state['F_coarse'], gamma, v, transpose=False)
+            else:
+                P_fn = lambda v: v
+
+            if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
+                Pt_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
+                        T_batch, state['F_coarse'], gamma, v, transpose=True)
+            else:
+                Pt_fn = lambda v: v
+
+            # Compute the approximate natural gradient
+            natgrad_w = Pt_fn(compute_natgrad_from_eigs(
+                arch, P_fn(grad_w), state['A_eig'], state['G_eig'], state['pi'], gamma))
+            #natgrad_w_pre_norm[idx] = np.linalg.norm(natgrad_w)
+
+            if config['has_correction']:
+                natgrad_corr = config['natgrad_correction_fn'](
+                        state, arch, grad_w, natgrad_w, state['F_coarse'], gamma)
+                #natgrad_w_corr_norm[idx] = np.linalg.norm(natgrad_corr)
+                natgrad_w = natgrad_w + natgrad_corr
+            return natgrad_w
+
+        # GGN-vector product
+        mvp = lambda v: kfac_util.gnhvp(lambda w: arch.net_apply(arch.unflatten(w), X_batch),
+                                        lambda y: output_model.nll_fn(y, T_batch), state['w'], v) / batch_size
+        # damped GGN-vector product
+        mvp_damp = kfac_util.dampen(mvp, gamma**2)
+        #mvp_damp = kfac_util.dampen(mvp, state['lambda'])
+
+        if 'conjgrad' in config['optimizer']:
+            tol = config['conjgrad_tol']
+            maxiter = config['conjgrad_maxiter']
+            natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter)
+            #natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter, M=precon)
+            state['conjgrad_niters'] = info
         else:
-            P_fn = lambda v: v
-
-        if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
-            Pt_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
-                    T_batch, state['F_coarse'], gamma, v, transpose=True)
-        else:
-            Pt_fn = lambda v: v
-
-        # Compute the approximate natural gradient
-        natgrad_w = Pt_fn(compute_natgrad_from_eigs(
-            arch, P_fn(grad_w), state['A_eig'], state['G_eig'], state['pi'], gamma))
-        natgrad_w_pre_norm[idx] = np.linalg.norm(natgrad_w)
-
-        if config['has_correction']:
-            natgrad_corr = config['natgrad_correction_fn'](
-                    state, arch, grad_w, natgrad_w, state['F_coarse'], gamma)
-            natgrad_w_corr_norm[idx] = np.linalg.norm(natgrad_corr)
-            natgrad_w = natgrad_w + natgrad_corr
+            natgrad_w = precon(grad_w)
 
         # Determine the step size parameters using MVPs
         if config['use_momentum'] and 'update' in state:
@@ -626,9 +645,15 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
             dirs = [-natgrad_w, prev_update]
         else:
             dirs = [-natgrad_w]
+
+        #quad_dec[idx] = -0.5 * (dirs[0].T @ mvp_damp(dirs[0])) - grad_w.T @ dirs[0]
+        #print(f"quad_dec = {quad_dec[idx]}")
+
         coeffs[idx], quad_dec[idx] = compute_step_coeffs(
             arch, output_model, state['w'], X_batch, T_batch, dirs,
             grad_w, config['weight_cost'], state['lambda'], config['chunk_size'])
+        #print(f"quad_dec = {quad_dec[idx]}")
+
         update[idx] = compute_update(coeffs[idx], dirs)
         new_w[idx] = state['w'] + update[idx]
 
@@ -639,8 +664,8 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     # Store values for best_idx in state
     best_idx = onp.argmin(results)
     state['gamma'] = gammas[best_idx]
-    state['natgrad_w_pre_norm'] = natgrad_w_pre_norm[best_idx]
-    state['natgrad_w_corr_norm'] = natgrad_w_corr_norm[best_idx]
+    #state['natgrad_w_pre_norm'] = natgrad_w_pre_norm[best_idx]
+    #state['natgrad_w_corr_norm'] = natgrad_w_corr_norm[best_idx]
     state['coeffs'] = coeffs[best_idx]
     state['quad_dec'] = quad_dec[best_idx]
     state['update'] = update[best_idx]
