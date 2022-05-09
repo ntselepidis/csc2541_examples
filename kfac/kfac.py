@@ -648,8 +648,10 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         if 'conjgrad' in config['optimizer']:
             tol = config['conjgrad_tol']
             maxiter = config['conjgrad_maxiter']
-            natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter)
-            #natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter, M=precon)
+            if 'kfac' in config['optimizer']:
+                natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter, M=precon)
+            else:
+                natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter)
             state['conjgrad_niters'] = info
         else:
             natgrad_w = precon(grad_w)
