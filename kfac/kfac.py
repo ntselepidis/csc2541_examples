@@ -41,6 +41,22 @@ def get_chunks(batch_size, chunk_size):
         start = end
 
 
+def gnhvp(arch, output_model, w, X, T, vin, chunk_size):
+    batch_size = X.shape[0]
+    vout = 0
+
+    for chunk_idxs in get_chunks(batch_size, chunk_size):
+        X_chunk, T_chunk = X[chunk_idxs, :], T[chunk_idxs, :]
+
+        mvp = lambda v: kfac_util.gnhvp_chunk(lambda w: arch.net_apply(arch.unflatten(w), X_chunk),
+                                              lambda y: output_model.nll_fn(y, T_chunk), w, v)
+        vout += mvp(vin)
+
+    vout /= batch_size
+
+    return vout
+
+
 def make_instrumented_vjp(apply_fn, params, inputs):
     """Returns a function which takes in the output layer gradients and returns a dict
     containing the gradients for all the intermediate layers."""
@@ -357,11 +373,11 @@ def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
     return natgrad_corr_w
 
 # Computes P*v = (I - F*Q)*v or P.transpose()*v = (I - Q*F)*v
-def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, transpose):
+def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, chunk_size, transpose):
 
     # GGN-vector product
-    mvp = lambda v: kfac_util.gnhvp(lambda w: arch.net_apply(arch.unflatten(w), X),
-                                    lambda y: output_model.nll_fn(y, T), w, v) / X.shape[0]
+    mvp = lambda v: gnhvp(arch, output_model, w, X, T, v, chunk_size)
+
     # damped GGN-vector product
     mvp_damp = kfac_util.dampen(mvp, gamma**2)
 
@@ -601,13 +617,13 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         def precon(grad_w):
             if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
                 P_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
-                        T_batch, state['F_coarse'], gamma, v, transpose=False)
+                        T_batch, state['F_coarse'], gamma, v, config['chunk_size'], transpose=False)
             else:
                 P_fn = lambda v: v
 
             if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
                 Pt_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
-                        T_batch, state['F_coarse'], gamma, v, transpose=True)
+                        T_batch, state['F_coarse'], gamma, v, config['chunk_size'], transpose=True)
             else:
                 Pt_fn = lambda v: v
 
@@ -624,11 +640,10 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
             return natgrad_w
 
         # GGN-vector product
-        mvp = lambda v: kfac_util.gnhvp(lambda w: arch.net_apply(arch.unflatten(w), X_batch),
-                                        lambda y: output_model.nll_fn(y, T_batch), state['w'], v) / batch_size
+        mvp = lambda v: gnhvp(arch, output_model, state['w'], X_batch, T_batch, v, config['chunk_size'])
+
         # damped GGN-vector product
         mvp_damp = kfac_util.dampen(mvp, gamma**2)
-        #mvp_damp = kfac_util.dampen(mvp, state['lambda'])
 
         if 'conjgrad' in config['optimizer']:
             tol = config['conjgrad_tol']

@@ -78,28 +78,16 @@ def get_flatten_fns(init_fn, in_shape, float64=False):
 def hvp(J, w, v):
     return jvp(grad(J), (w,), (v,))[1]
 
-def gnhvp(f, L, w, v):
+def gnhvp_chunk(f, L, w, v):
     y, R_y = jvp(f, (w,), (v,))
     R_gy = hvp(L, y, R_y)
     _, f_vjp = vjp(f, w)
     return f_vjp(R_gy)[0]
 
-def approx_solve(A_mvp, b, niter):
-    dim = b.size
-    A_linop = scipy.sparse.linalg.LinearOperator((dim,dim), matvec=A_mvp)
-    res = scipy.sparse.linalg.cg(A_linop, b, maxiter=niter)
-    return res[0]
-
 def dampen(mvp, lam):
     def new_mvp(x):
         return mvp(x) + lam*x
     return new_mvp
-
-def approx_solve_H(f_param, L_param, w, phi, Rg_w, lam, niter):
-    mvp = lambda v: gnhvp(lambda w: f_param(w, phi),
-                          lambda y: L_param(y, phi), w, v)
-    mvp_damp = dampen(mvp, lam)
-    return approx_solve(mvp_damp, Rg_w, niter)
 
 def get_ema_param(timescale):
     return 1 - 1 / timescale
