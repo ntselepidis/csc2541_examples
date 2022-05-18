@@ -494,6 +494,30 @@ def update_lambda(arch, output_model, lmbda, old_w, new_w, X, T, quad_dec, confi
     
     return new_lambda, rho
     
+def apply_preconditioner(state, arch, output_model, grad_w, X, T, F_coarse, gamma, config):
+    if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
+        P_fn = lambda v: P(state, arch, output_model, state['w'], X, T,
+                F_coarse, gamma, v, config['chunk_size'], transpose=False)
+    else:
+        P_fn = lambda v: v
+
+    if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
+        Pt_fn = lambda v: P(state, arch, output_model, state['w'], X, T,
+                F_coarse, gamma, v, config['chunk_size'], transpose=True)
+    else:
+        Pt_fn = lambda v: v
+
+    # Compute the approximate natural gradient
+    natgrad_w = Pt_fn(compute_natgrad_from_eigs(
+        arch, P_fn(grad_w), state['A_eig'], state['G_eig'], state['pi'], gamma))
+    #natgrad_w_pre_norm[idx] = np.linalg.norm(natgrad_w)
+
+    if config['has_correction']:
+        natgrad_corr = config['natgrad_correction_fn'](
+                state, arch, grad_w, natgrad_w, F_coarse, gamma)
+        #natgrad_w_corr_norm[idx] = np.linalg.norm(natgrad_corr)
+        natgrad_w = natgrad_w + natgrad_corr
+    return natgrad_w
 
 def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
     state = {}
@@ -614,30 +638,9 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
 
     for idx, gamma in enumerate(gammas):
 
-        def precon(grad_w):
-            if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
-                P_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
-                        T_batch, state['F_coarse'], gamma, v, config['chunk_size'], transpose=False)
-            else:
-                P_fn = lambda v: v
-
-            if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
-                Pt_fn = lambda v: P(state, arch, output_model, state['w'], X_batch,
-                        T_batch, state['F_coarse'], gamma, v, config['chunk_size'], transpose=True)
-            else:
-                Pt_fn = lambda v: v
-
-            # Compute the approximate natural gradient
-            natgrad_w = Pt_fn(compute_natgrad_from_eigs(
-                arch, P_fn(grad_w), state['A_eig'], state['G_eig'], state['pi'], gamma))
-            #natgrad_w_pre_norm[idx] = np.linalg.norm(natgrad_w)
-
-            if config['has_correction']:
-                natgrad_corr = config['natgrad_correction_fn'](
-                        state, arch, grad_w, natgrad_w, state['F_coarse'], gamma)
-                #natgrad_w_corr_norm[idx] = np.linalg.norm(natgrad_corr)
-                natgrad_w = natgrad_w + natgrad_corr
-            return natgrad_w
+        # preconditioner
+        precon = lambda grad_w: apply_preconditioner(state, arch, output_model,
+                grad_w, X_batch, T_batch, state['F_coarse'], gamma, config)
 
         # GGN-vector product
         mvp = lambda v: gnhvp(arch, output_model, state['w'], X_batch, T_batch, v, config['chunk_size'])
