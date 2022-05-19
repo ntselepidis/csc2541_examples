@@ -1,6 +1,6 @@
 from jax import grad, jit, numpy as np, random, vjp, jvp
 from jax.scipy.linalg import eigh
-from jax.scipy.sparse.linalg import cg
+from pcg import pcg as cg
 import numpy as onp
 
 
