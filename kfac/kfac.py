@@ -41,6 +41,15 @@ def get_chunks(batch_size, chunk_size):
         start = end
 
 
+def gnhvp_core(apply_fn, unflatten_fn, nll_fn, w, X_chunk, T_chunk, vin, chunk_size):
+
+    mvp = lambda v: kfac_util.gnhvp_chunk(lambda w: apply_fn(unflatten_fn(w), X_chunk),
+                                          lambda y: nll_fn(y, T_chunk), w, v)
+    return mvp(vin)
+
+gnhvp_core = jit(gnhvp_core, static_argnums=(0,1,2))
+
+
 def gnhvp(arch, output_model, w, X, T, vin, chunk_size):
     batch_size = X.shape[0]
     vout = 0
@@ -48,8 +57,10 @@ def gnhvp(arch, output_model, w, X, T, vin, chunk_size):
     for chunk_idxs in get_chunks(batch_size, chunk_size):
         X_chunk, T_chunk = X[chunk_idxs, :], T[chunk_idxs, :]
 
-        mvp = lambda v: kfac_util.gnhvp_chunk(lambda w: arch.net_apply(arch.unflatten(w), X_chunk),
-                                              lambda y: output_model.nll_fn(y, T_chunk), w, v)
+        #mvp = lambda v: kfac_util.gnhvp_chunk(lambda w: arch.net_apply(arch.unflatten(w), X_chunk),
+        #                                      lambda y: output_model.nll_fn(y, T_chunk), w, v)
+        mvp = lambda v: gnhvp_core(arch.net_apply, arch.unflatten,
+                output_model.nll_fn, w, X_chunk, T_chunk, v, chunk_size)
         vout += mvp(vin)
 
     vout /= batch_size
@@ -340,7 +351,38 @@ def compute_update(coeffs, dirs):
     return ans
 
 # Two-Level K-FAC (sum of inverses)
+def compute_natgrad_correction_cgc_core(param_info, flatten_fn, unflatten_fn, ZZt, grad_w, F_coarse, gamma):
+    # compute coarse grad
+    grad_dict = unflatten_fn(grad_w)
+    grad_Wb_mean = {out_name: 0.0 for _, out_name in param_info}
+    for _, out_name in param_info:
+        grad_W, grad_b = grad_dict[out_name]
+        grad_Wb = np.vstack([grad_W, grad_b.reshape((1, -1))])
+        grad_Wb_mean[out_name] = np.sum(grad_Wb) / scale_fn( onp.prod(grad_Wb.shape) )
+
+    grad_w_coarse = np.vstack([grad_Wb_mean[name] for name in grad_Wb_mean])
+
+    # solve for coarse natgrad
+    natgrad_w_coarse = np.linalg.solve(F_coarse + (gamma**2)*ZZt, grad_w_coarse)
+
+    # prolongate
+    natgrad_corr_dict = {out_name: 0.0 for _, out_name in param_info}
+    for index, (_, out_name) in enumerate(param_info):
+        W_shape, b_shape = grad_dict[out_name][0].shape, grad_dict[out_name][1].shape
+        val = natgrad_w_coarse[index] / scale_fn( onp.prod(W_shape) + onp.prod(b_shape) )
+        natgrad_corr_dict[out_name] = (val*np.ones(W_shape), val*np.ones(b_shape))
+
+    natgrad_corr_w = flatten_fn(natgrad_corr_dict)
+
+    return natgrad_corr_w
+
+compute_natgrad_correction_cgc_core = jit(compute_natgrad_correction_cgc_core, static_argnums=(0,1,2))
+
+# Two-Level K-FAC (sum of inverses)
 def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
+    return compute_natgrad_correction_cgc_core(arch.param_info, arch.flatten,
+            arch.unflatten, state['ZZt'], grad_w, F_coarse, gamma)
+    # Use the code below only for debugging
     # compute coarse grad
     grad_dict = arch.unflatten(grad_w)
     grad_Wb_mean = {out_name: 0.0 for _, out_name in arch.param_info}
