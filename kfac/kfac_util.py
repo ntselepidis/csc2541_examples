@@ -8,7 +8,7 @@ import scipy.sparse
 
 
 def named_serial(*layers):
-    # based on jax.experimental.stax.serial
+    # based on jax.example_libraries.stax.serial
     nlayers = len(layers)
     names, fns = zip(*layers)
     init_fns, apply_fns = zip(*fns)
@@ -100,7 +100,7 @@ def sparse_init(num_conn=15, stdev=1.):
         num_conn_ = np.minimum(num_conn, in_dim)
         W = np.zeros(shape)
         row_idxs = np.outer(np.arange(in_dim), np.ones(out_dim)).astype(np.uint32)
-        row_idxs = random.shuffle(k1, row_idxs)[:num_conn_, :].ravel()
+        row_idxs = random.permutation(k1, row_idxs, independent=True)[:num_conn_, :].ravel()
         col_idxs = np.outer(np.ones(num_conn_), np.arange(out_dim)).astype(np.uint32).ravel()
         vals = random.normal(k2, shape=(num_conn_*out_dim,)) * stdev
         #return index_update(W, (row_idxs, col_idxs), vals)

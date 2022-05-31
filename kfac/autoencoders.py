@@ -1,5 +1,5 @@
 from jax import nn, numpy as np
-from jax.experimental import stax
+from jax.example_libraries import stax
 from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
 import numpy as onp
