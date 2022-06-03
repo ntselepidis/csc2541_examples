@@ -3,8 +3,9 @@
 import jax.numpy as np
 from jax.scipy.sparse.linalg import cg
 import time
+from matplotlib import pyplot as plt
 
-def pcg(A, b, x0=None, *, tol=1e-05, atol=0.0, maxiter=None, M=None, verbose=False):
+def pcg(A, b, x0=None, *, tol=1e-05, atol=0.0, maxiter=None, M=None, verbose=False, has_aux=False):
     if M is None:
         M = lambda x: x
     info = -1
@@ -19,16 +20,26 @@ def pcg(A, b, x0=None, *, tol=1e-05, atol=0.0, maxiter=None, M=None, verbose=Fal
     z = M(r)
     p = z
     gamma = r.T @ z
+    if has_aux:
+        _val = np.zeros((maxiter+1,))
+        _relres = np.zeros((maxiter+1,))
+        _val = _val.at[0].set(-0.5*(x.T @ (r + b)))
+        _relres = _relres.at[0].set(np.linalg.norm(r)/normb)
     for i in range(1,maxiter+1):
         Ap = A(p)
         alpha = gamma / (p.T @ Ap)
         x += alpha*p
         r -= alpha*Ap
         normr = np.linalg.norm(r)
+        if verbose or has_aux:
+            #val = 0.5*x.T@A(x) - x.T@b
+            val = -0.5*(x.T @ (r + b))
         if verbose:
-            val = 0.5*x.T@A(x) - x.T@b
             print(f'{i}: relres = {normr/normb}, val = {val}')
-        if normr < tolb:
+        if has_aux:
+            _val = _val.at[i].set(val)
+            _relres = _relres.at[i].set(normr/normb)
+        if normr < tolb and not has_aux:
             info = i
             break
         z = M(r)
@@ -36,12 +47,16 @@ def pcg(A, b, x0=None, *, tol=1e-05, atol=0.0, maxiter=None, M=None, verbose=Fal
         gamma = r.T @ z
         beta = gamma / gamma_old
         p = z + beta*p
-    return x, info
+    if has_aux:
+        return x, info, _val, _relres
+    else:
+        return x, info
 
 if __name__ == '__main__':
     n = 32
     tol=1e-05
     maxiter=100
+    has_aux=False
 
     I = np.identity(n)
     T = -np.tri(n,n,1) + np.tri(n,n,-2) + 3.0*I
@@ -68,9 +83,27 @@ if __name__ == '__main__':
     x, info = pcg(lambda x: A@x, b, tol=tol, atol=0.0, maxiter=maxiter)
     # benchmark
     t0 = time.time()
-    x, info = pcg(lambda x: A@x, b, tol=tol, atol=0.0, maxiter=maxiter)
+    x, info, *_ = pcg(lambda x: A@x, b, tol=tol, atol=0.0, maxiter=maxiter, has_aux=has_aux)
     t1 = time.time()
     print(f'niters = {info}')
     print(f'relres = {relres(x)}')
     print(f'relerr = {relerr(x)}')
     print(f'time   = {t1 - t0}')
+
+    if has_aux:
+        # unpack
+        _val, _relres = _
+
+        fig, axs = plt.subplots(1, 2, figsize=(2*6.4, 4.8))
+        fig.suptitle('PCG convergence plots')
+
+        axs[0].plot(_val)
+        axs[0].set_title('val')
+        axs[0].grid()
+
+        axs[1].plot(_relres)
+        axs[1].set_title('relres')
+        axs[1].set_yscale('log')
+        axs[1].grid()
+
+        plt.savefig('pcg_convergence.png')
