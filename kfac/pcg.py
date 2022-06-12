@@ -39,7 +39,7 @@ def pcg(A, b, x0=None, *, tol=1e-05, atol=0.0, maxiter=None, M=None, verbose=Fal
         if has_aux:
             _val = _val.at[i].set(val)
             _relres = _relres.at[i].set(normr/normb)
-        if normr < tolb and not has_aux:
+        if normr < tolb:
             info = i
             break
         z = M(r)
