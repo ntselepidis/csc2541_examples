@@ -85,6 +85,7 @@ def default_config():
     config['adapt_gamma'] = 1
     config['conjgrad_tol'] = 5e-4
     config['conjgrad_maxiter'] = 100
+    config['conjgrad_benchmark_interval'] = config['max_iter'] + 10 # disabled by default
     
     return config
 
@@ -115,6 +116,27 @@ def plot_matrix_to_tensorboard(writer, optimizer, mat, comment, step):
 #     fig.canvas.draw()
 #     writer.add_figure(comment, fig, step)
 #     plt.close(fig)
+
+def plot_conjgrad_convergence_to_tensorboard(writer, val, relres, comment, step):
+    fig, axs = plt.subplots(1, 2, figsize=(2*6.4, 4.8))
+    fig.suptitle('conjgrad convergence plots')
+
+    for key in val:
+        axs[0].plot(val[key], label=key)
+    axs[0].set_title('val')
+    axs[0].grid()
+
+    for key in relres:
+        axs[1].plot(relres[key], label=key)
+    axs[1].set_title('relres')
+    axs[1].set_yscale('log')
+    axs[1].grid()
+
+    plt.legend()
+
+    fig.canvas.draw()
+    writer.add_figure(comment, fig, step)
+    plt.close(fig)
 
 def run_training(X_train, X_test, arch, config):
     if 'conjgrad' in config['optimizer']:
@@ -210,5 +232,8 @@ def run_training(X_train, X_test, arch, config):
 
         #if (i+1) % 20 == 0:
         #    plot_natgrad_to_tensorboard(writer, onp.asarray(state['natgrad_w_pre']), onp.asarray(state['natgrad_w_corr']), 'kfac natgrad and correction', i)
+
+        if (i+1) % config['conjgrad_benchmark_interval'] == 0:
+            plot_conjgrad_convergence_to_tensorboard(writer, state['conjgrad_val'], state['conjgrad_relres'], 'conjgrad convergence plots', i)
 
     writer.close()

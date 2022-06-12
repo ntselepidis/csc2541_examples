@@ -1,6 +1,7 @@
 from jax import grad, jit, numpy as np, random, vjp, jvp
 from jax.scipy.linalg import eigh
 from pcg import pcg as cg
+from copy import copy
 import numpy as onp
 
 
@@ -561,6 +562,56 @@ def apply_preconditioner(state, arch, output_model, grad_w, X, T, F_coarse, gamm
         natgrad_w = natgrad_w + natgrad_corr
     return natgrad_w
 
+def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_damp, grad_w, tol, maxiter):
+    val = {}
+    relres = {}
+
+    preconditioners = ['none',
+                       'kfac',
+                       'kfac-cgc',
+                       'kfac-cgc-m1',
+                       'kfac-cgc-m2',
+                       'kfac-cgc-m3',
+                       'kfac-m3',
+                       'kfac-m2',
+                       'kfac-cgc-m1-Qx0',
+                       'kfac-cgc-m2-Qx0',
+                       'kfac-cgc-m3-Qx0',
+                       'kfac-m3-Qx0',
+                       'kfac-m2-Qx0']
+
+    Qx0 = compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
+
+    # Preconditioned CG
+    for prec in preconditioners:
+        print(f'Running {maxiter} CG iterations with preconditioner M = {prec} ...')
+
+        # Setup preconditioner's config
+        _config = copy(config)
+        _config['has_correction'] = False
+        if 'cgc' in prec:
+            _config['has_correction'] = True
+            _config['natgrad_correction_fn'] = \
+                lambda state, arch, grad_w, natgrad_w, F_coarse, gamma: \
+                    compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
+
+        # Setup preconditioner
+        if prec != 'none':
+            M = lambda grad_w: apply_preconditioner(state, arch, output_model, grad_w, X, T, F_coarse, gamma, _config)
+        else:
+            M = None
+
+        # initial estimate for CG
+        if 'Qx0' in prec:
+            x0 = Qx0
+        else:
+            x0 = None
+
+        # Run CG
+        _, _, val[prec], relres[prec] = cg(mvp_damp, grad_w, x0=x0, tol=tol, atol=0.0, maxiter=maxiter, M=M, has_aux=True)
+
+    return val, relres
+
 def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
     state = {}
     
@@ -739,6 +790,13 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         results.append(compute_cost(
             arch, output_model.nll_fn, new_w[idx], X_batch, T_batch,
             config['weight_cost'], config['chunk_size']))
+
+        # Run CG benchmark
+        if state['step'] % config['conjgrad_benchmark_interval'] == 0:
+            state['conjgrad_val'], state['conjgrad_relres'] = \
+            cg_benchmark(state, arch, output_model, X_batch, T_batch,
+                    state['F_coarse'], gamma, config, mvp_damp, grad_w,
+                    config['conjgrad_tol'], config['conjgrad_maxiter'])
 
     # Store values for best_idx in state
     best_idx = onp.argmin(results)
