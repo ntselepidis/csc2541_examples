@@ -598,7 +598,8 @@ def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
     else:
         pass
 
-    flag = any(tag in config['optimizer'] for tag in ('m1', 'm2', 'm3'))
+    #flag = any(tag in config['optimizer'] for tag in ('m1', 'm2', 'm3'))
+    flag = True
 
     if config['has_correction'] or flag:
         nlayers = len(arch.param_info)
@@ -690,16 +691,32 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         # damped GGN-vector product
         mvp_damp = kfac_util.dampen(mvp, gamma**2)
 
+        # initial estimate for current step
+        if 'Qx0' in config['optimizer']:
+            x0 = compute_natgrad_correction_cgc(state, arch, grad_w, state['F_coarse'], gamma)
+        else:
+            x0 = None
+
         if 'conjgrad' in config['optimizer']:
             tol = config['conjgrad_tol']
             maxiter = config['conjgrad_maxiter']
             if 'kfac' in config['optimizer']:
-                natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter, M=precon)
+                natgrad_w, info = cg(mvp_damp, grad_w, x0=x0, tol=tol, atol=0.0, maxiter=maxiter, M=precon)
             else:
                 natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter)
             state['conjgrad_niters'] = info
         else:
-            natgrad_w = precon(grad_w)
+            if 'Qx0' in config['optimizer']:
+                if 'alpha' in config['optimizer']:
+                    r = grad_w - mvp_damp(x0)
+                    p = precon(r)
+                    Ap = mvp_damp(p)
+                    alpha = (r.T @ p) / (p.T @ Ap)
+                    natgrad_w = x0 + alpha*p
+                else:
+                    natgrad_w = x0 + precon(grad_w - mvp_damp(x0))
+            else:
+                natgrad_w = precon(grad_w)
 
         # Determine the step size parameters using MVPs
         if config['use_momentum'] and 'update' in state:
