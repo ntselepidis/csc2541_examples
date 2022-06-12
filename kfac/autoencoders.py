@@ -94,7 +94,7 @@ def squared_error(logits, T):
     y = nn.sigmoid(logits)
     return np.sum((y-T)**2)
 
-def plot_to_tensorboard(writer, optimizer, mat, comment, step):
+def plot_matrix_to_tensorboard(writer, optimizer, mat, comment, step):
     if 'woodbury' in optimizer:
         mat = mat - np.diag(np.diag(mat))
     fig = plt.figure()
@@ -204,9 +204,9 @@ def run_training(X_train, X_test, arch, config):
         #writer.add_scalar('data/natgrad_w_corr_norm', state['natgrad_w_corr_norm'], i)
 
         if i % config['cov_update_interval'] == 0:
-            plot_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_coarse']), 'a. F_coarse', i)
-            plot_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_hat_coarse']), 'b. F_hat_coarse', i)
-            plot_to_tensorboard(writer, config['optimizer'], onp.abs(state['F_coarse'] - state['F_hat_coarse']), 'c. abs(F_coarse - F_hat_coarse)', i)
+            plot_matrix_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_coarse']), 'a. F_coarse', i)
+            plot_matrix_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_hat_coarse']), 'b. F_hat_coarse', i)
+            plot_matrix_to_tensorboard(writer, config['optimizer'], onp.abs(state['F_coarse'] - state['F_hat_coarse']), 'c. abs(F_coarse - F_hat_coarse)', i)
 
         #if (i+1) % 20 == 0:
         #    plot_natgrad_to_tensorboard(writer, onp.asarray(state['natgrad_w_pre']), onp.asarray(state['natgrad_w_corr']), 'kfac natgrad and correction', i)
