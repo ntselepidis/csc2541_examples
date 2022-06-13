@@ -565,6 +565,7 @@ def apply_preconditioner(state, arch, output_model, grad_w, X, T, F_coarse, gamm
 def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_damp, grad_w, tol, maxiter):
     val = {}
     relres = {}
+    x0 = -state['update']
 
     preconditioners = ['none',
                        'kfac',
@@ -574,13 +575,19 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
                        'kfac-cgc-m3',
                        'kfac-m3',
                        'kfac-m2',
-                       'kfac-cgc-m1-Qx0',
-                       'kfac-cgc-m2-Qx0',
-                       'kfac-cgc-m3-Qx0',
-                       'kfac-m3-Qx0',
-                       'kfac-m2-Qx0']
+                       'kfac-cgc-m1-Qb',
+                       'kfac-cgc-m2-Qb',
+                       'kfac-cgc-m3-Qb',
+                       'kfac-m3-Qb',
+                       'kfac-m2-Qb']
 
-    Qx0 = compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
+    # Compute initial estimate for two-level preconditioned CG
+    Qb = compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
+
+    Pt_fn = lambda v: P(state, arch, output_model, state['w'], X, T,
+            F_coarse, gamma, v, config['chunk_size'], transpose=True)
+
+    Qb_plus_Ptx0 = Qb + Pt_fn(x0)
 
     # Preconditioned CG
     for prec in preconditioners:
@@ -588,6 +595,7 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
 
         # Setup preconditioner's config
         _config = copy(config)
+        _config['optimizer'] = prec
         _config['has_correction'] = False
         if 'cgc' in prec:
             _config['has_correction'] = True
@@ -601,14 +609,18 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
         else:
             M = None
 
-        # initial estimate for CG
-        if 'Qx0' in prec:
-            x0 = Qx0
+        # Initial estimate for CG
+        if 'Qb-plus-Ptx0' in prec:
+            _x0 = Qb_plus_Ptx0
+        elif 'Qb' in prec:
+            _x0 = Qb
+        elif 'x0' in prec:
+            _x0 = x0
         else:
-            x0 = None
+            _x0 = None
 
         # Run CG
-        _, _, val[prec], relres[prec] = cg(mvp_damp, grad_w, x0=x0, tol=tol, atol=0.0, maxiter=maxiter, M=M, has_aux=True)
+        _, _, val[prec], relres[prec] = cg(mvp_damp, grad_w, x0=_x0, tol=tol, atol=0.0, maxiter=maxiter, M=M, has_aux=True)
 
     return val, relres
 
@@ -743,7 +755,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         mvp_damp = kfac_util.dampen(mvp, gamma**2)
 
         # initial estimate for current step
-        if 'Qx0' in config['optimizer']:
+        if 'Qb' in config['optimizer']:
             x0 = compute_natgrad_correction_cgc(state, arch, grad_w, state['F_coarse'], gamma)
         else:
             x0 = None
@@ -757,7 +769,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
                 natgrad_w, info = cg(mvp_damp, grad_w, x0=None, tol=tol, atol=0.0, maxiter=maxiter)
             state['conjgrad_niters'] = info
         else:
-            if 'Qx0' in config['optimizer']:
+            if 'Qb' in config['optimizer']:
                 if 'alpha' in config['optimizer']:
                     r = grad_w - mvp_damp(x0)
                     p = precon(r)

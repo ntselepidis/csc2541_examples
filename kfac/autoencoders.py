@@ -3,7 +3,9 @@ from jax.example_libraries import stax
 from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
 import numpy as onp
+import pandas as pd
 import time
+import os
 
 import kfac
 import kfac_util
@@ -138,6 +140,24 @@ def plot_conjgrad_convergence_to_tensorboard(writer, val, relres, comment, step)
     writer.add_figure(comment, fig, step)
     plt.close(fig)
 
+def get_conjgrad_convergence_dataframe(val, relres):
+    keys = list(val.keys())
+    niter = len(val[keys[0]])
+
+    _prec = []
+    _iter = []
+    _val = []
+    _relres = []
+    for key in keys:
+        _prec = _prec + (niter*[key])
+        _iter = _iter + [i for i in range(niter)]
+        _val = _val + val[key].tolist()
+        _relres = _relres + relres[key].tolist()
+
+    d = {'prec': _prec, 'iter': _iter, 'val': _val, 'relres': _relres}
+
+    return pd.DataFrame(data=d)
+
 def run_training(X_train, X_test, arch, config):
     if 'conjgrad' in config['optimizer']:
         config['use_momentum'] = 0
@@ -235,5 +255,9 @@ def run_training(X_train, X_test, arch, config):
 
         if (i+1) % config['conjgrad_benchmark_interval'] == 0:
             plot_conjgrad_convergence_to_tensorboard(writer, state['conjgrad_val'], state['conjgrad_relres'], 'conjgrad convergence plots', i)
+            df = get_conjgrad_convergence_dataframe(state['conjgrad_val'], state['conjgrad_relres'])
+            dirname = 'cg_benchmark_' + config['experiment']
+            os.makedirs(dirname, exist_ok=True)
+            df.to_csv(f'{dirname}/iter-{i}.csv')
 
     writer.close()
