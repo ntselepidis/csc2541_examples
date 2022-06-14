@@ -8,7 +8,7 @@ import pandas as pd
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--file_id', default=249, type=int)
+    parser.add_argument('--filename', default='iter-249.csv', type=str)
     parser.add_argument('--logscale', default=0, choices=[0, 1], type=int)
     parser.add_argument('--stop_iter', default=-1, type=int)
     parser.add_argument('--output', default='png', choices=['pdf', 'png'])
@@ -20,9 +20,8 @@ def get_args():
 def main():
     args = get_args()
 
-    filename = 'cg_benchmark/iter-' + str(args.file_id) + '.csv'
-    print(f'Reading {filename} ...')
-    df = pd.read_csv(filename)
+    print(f'Reading {args.filename} ...')
+    df = pd.read_csv(args.filename)
 
     if args.stop_iter > 0:
         df = df[df['iter'] <= args.stop_iter]
@@ -51,7 +50,7 @@ def main():
     sns.set_style("darkgrid")
 
     fig, axs = plt.subplots(1, 2, figsize=(2*6.4, 4.8))
-    fig.suptitle(f'conjgrad convergence plots ( step = {args.file_id} )')
+    fig.suptitle(f'conjgrad convergence plots ( {args.filename} )')
 
     sns.lineplot(ax=axs[0], data=df, x="iter", y="val", hue="prec")
     sns.lineplot(ax=axs[1], data=df, x="iter", y="relres", hue="prec")
@@ -59,7 +58,7 @@ def main():
     if args.logscale:
         axs[1].set_yscale('log')
 
-    plt.savefig(f'iter-{args.file_id}.{args.output}', dpi=args.dpi)
+    plt.savefig(f'{args.filename[0:-4]}.{args.output}', dpi=args.dpi)
 
 if __name__ == '__main__':
     main()
