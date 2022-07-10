@@ -88,6 +88,8 @@ def default_config():
     config['conjgrad_tol'] = 5e-6
     config['conjgrad_maxiter'] = 100 # 40
     config['conjgrad_benchmark_interval'] = config['max_iter'] + 10 # disabled by default
+
+    config['nbasis'] = 1 + 4 # 1 constant + 4 eigenvector basis functions
     
     return config
 
@@ -162,7 +164,8 @@ def run_training(X_train, X_test, arch, config):
     if 'conjgrad' in config['optimizer']:
         config['use_momentum'] = 0
     writer = SummaryWriter(comment='_' + config['experiment'] + '_' + \
-            config['optimizer'] + '_mom-' + str(config['use_momentum']) + \
+            config['optimizer'] + '_nbasis-' + str(config['nbasis']) + \
+            '_mom-' + str(config['use_momentum']) + \
             '_init-lambda-' + str(int(config['init_lambda'])) + \
             '_adapt-gamma-' + str(int(config['adapt_gamma'])) + '_' + \
             config['comment'] + '_' + str(config['random_seed']))
@@ -248,7 +251,7 @@ def run_training(X_train, X_test, arch, config):
         if i % config['cov_update_interval'] == 0:
             plot_matrix_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_coarse']), 'a. F_coarse', i)
             plot_matrix_to_tensorboard(writer, config['optimizer'], onp.asarray(state['F_hat_coarse']), 'b. F_hat_coarse', i)
-            plot_matrix_to_tensorboard(writer, config['optimizer'], onp.abs(state['F_coarse'] - state['F_hat_coarse']), 'c. abs(F_coarse - F_hat_coarse)', i)
+            #plot_matrix_to_tensorboard(writer, config['optimizer'], onp.abs(state['F_coarse'] - state['F_hat_coarse']), 'c. abs(F_coarse - F_hat_coarse)', i)
 
         #if (i+1) % 20 == 0:
         #    plot_natgrad_to_tensorboard(writer, onp.asarray(state['natgrad_w_pre']), onp.asarray(state['natgrad_w_corr']), 'kfac natgrad and correction', i)
@@ -256,7 +259,7 @@ def run_training(X_train, X_test, arch, config):
         if (i+1) % config['conjgrad_benchmark_interval'] == 0:
             plot_conjgrad_convergence_to_tensorboard(writer, state['conjgrad_val'], state['conjgrad_relres'], 'conjgrad convergence plots', i)
             df = get_conjgrad_convergence_dataframe(state['conjgrad_val'], state['conjgrad_relres'])
-            dirname = 'cg_benchmark_' + config['experiment']
+            dirname = 'cg_benchmark_' + config['experiment'] + '_nbasis-' + str(config['nbasis']) + '_' + config['comment'] + '_' + str(config['random_seed'])
             os.makedirs(dirname, exist_ok=True)
             df.to_csv(f'{dirname}/iter-{i}.csv')
 

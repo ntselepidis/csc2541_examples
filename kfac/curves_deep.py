@@ -50,6 +50,7 @@ def run(args):
     config['init_lambda'] = args.init_lambda
     config['adapt_gamma'] = args.adapt_gamma
     config['conjgrad_benchmark_interval'] = args.conjgrad_benchmark_interval
+    config['nbasis'] = args.nbasis
     autoencoders.run_training(X_train, X_test, arch, config)
 
 
@@ -63,6 +64,7 @@ if __name__ == '__main__':
     parser.add_argument('--init_lambda', default=150, type=float)
     parser.add_argument('--adapt_gamma', default=1, type=int, choices=[0, 1])
     parser.add_argument('--conjgrad_benchmark_interval', default=20010, type=int)
+    parser.add_argument('--nbasis', default=1, type=int)
     args = parser.parse_args()
     run(args)
 

@@ -1,5 +1,6 @@
 from jax import grad, jit, numpy as np, random, vjp, jvp
 from jax.scipy.linalg import eigh
+from jax.lax import batch_matmul, dynamic_update_slice
 from pcg import pcg as cg
 from copy import copy
 import numpy as onp
@@ -83,7 +84,7 @@ def make_instrumented_vjp(apply_fn, params, inputs):
     return primals_out, vjp_fn, activations
 
 
-def estimate_covariances_chunk(apply_fn, param_info, output_model, net_params, X_chunk, rng):
+def estimate_covariances_chunk(apply_fn, param_info, output_model, net_params, X_chunk, rng, has_aux=False):
     """Compute the empirical covariances on a chunk of data."""
     logits, vjp_fn, activations = make_instrumented_vjp(apply_fn, net_params, X_chunk)
     key, rng = random.split(rng)
@@ -93,6 +94,7 @@ def estimate_covariances_chunk(apply_fn, param_info, output_model, net_params, X
     A = {}
     G = {}
     a_hom_mean, ds_mean = {}, {}
+    a_hom_storage, ds_storage = {}, {}
     for in_name, out_name in param_info:
         a = activations[in_name]
         a_hom = np.hstack([a, np.ones((a.shape[0], 1))])
@@ -103,6 +105,10 @@ def estimate_covariances_chunk(apply_fn, param_info, output_model, net_params, X
 
         a_hom_mean[in_name] = np.sum(a_hom, axis=1) / scale_fn(a_hom.shape[1])
         ds_mean[out_name] = np.sum(ds, axis=1) / scale_fn(ds.shape[1])
+
+        if has_aux:
+            a_hom_storage[in_name] = a_hom
+            ds_storage[out_name] = ds
 
     a_hom_mean_stacked = np.vstack([a_hom_mean[in_name] for in_name in a_hom_mean])
     ds_mean_stacked = np.vstack([ds_mean[out_name] for out_name in ds_mean])
@@ -115,12 +121,15 @@ def estimate_covariances_chunk(apply_fn, param_info, output_model, net_params, X
     a_dot_g = (a_hom_mean_stacked * ds_mean_stacked)
     F_coarse = a_dot_g @ a_dot_g.T
 
-    return A, G, A_coarse, G_coarse, F_coarse
+    if has_aux:
+        return A, G, A_coarse, G_coarse, F_coarse, a_hom_storage, ds_storage
+    else:
+        return A, G, A_coarse, G_coarse, F_coarse
 
-estimate_covariances_chunk = jit(estimate_covariances_chunk, static_argnums=(0,1,2))
+estimate_covariances_chunk = jit(estimate_covariances_chunk, static_argnums=(0,1,2,6))
 
 
-def estimate_covariances(arch, output_model, w, X, rng, chunk_size):
+def estimate_covariances(arch, output_model, w, X, rng, chunk_size, has_aux=False):
     """Compute the empirical covariances on a batch of data."""
     batch_size = X.shape[0]
     net_params = arch.unflatten(w)
@@ -130,30 +139,59 @@ def estimate_covariances(arch, output_model, w, X, rng, chunk_size):
     A_coarse_sum = np.zeros((nlayers, nlayers))
     G_coarse_sum = np.zeros((nlayers, nlayers))
     F_coarse_sum = np.zeros((nlayers, nlayers))
+
+    if has_aux:
+        A_sum_, G_sum_ = {}, {}
+        for i in range(nlayers):
+            for j in range(nlayers):
+                A_sum_[(i, j)] = 0.
+                G_sum_[(i, j)] = 0.
+
     for chunk_idxs in get_chunks(batch_size, chunk_size):
         X_chunk = X[chunk_idxs,:]
         key, rng = random.split(rng)
         
-        A_curr, G_curr, A_coarse_curr, G_coarse_curr, F_coarse_curr = estimate_covariances_chunk(
-            arch.net_apply, arch.param_info, output_model, net_params, X_chunk, key)
+        A_curr, G_curr, A_coarse_curr, G_coarse_curr, F_coarse_curr, *_ = estimate_covariances_chunk(
+            arch.net_apply, arch.param_info, output_model, net_params, X_chunk, key, has_aux)
         A_sum = {name: A_sum[name] + A_curr[name] for name in A_sum}
         G_sum = {name: G_sum[name] + G_curr[name] for name in G_sum}
         A_coarse_sum = A_coarse_sum + A_coarse_curr
         G_coarse_sum = G_coarse_sum + G_coarse_curr
         F_coarse_sum = F_coarse_sum + F_coarse_curr
-            
+
+        if has_aux:
+            # unpack
+            a_hom_storage, ds_storage = _
+            # compute all As on current chunk
+            for i, (in_name_i, _) in enumerate(arch.param_info):
+                for j, (in_name_j, _) in enumerate(arch.param_info):
+                    A_sum_[(i, j)] = A_sum_[(i, j)] + a_hom_storage[in_name_i].T @ a_hom_storage[in_name_j]
+            # compute all Gs on current chunk
+            for i, (_, out_name_i) in enumerate(arch.param_info):
+                for j, (_, out_name_j) in enumerate(arch.param_info):
+                    G_sum_[(i, j)] = G_sum_[(i, j)] + ds_storage[out_name_i].T @ ds_storage[out_name_j]
+
     A_mean = {name: A_sum[name] / batch_size for name in A_sum}
     G_mean = {name: G_sum[name] / batch_size for name in G_sum}
     A_coarse_mean = A_coarse_sum / batch_size
     G_coarse_mean = G_coarse_sum / batch_size
     F_coarse_mean = F_coarse_sum / batch_size
-    
-    return A_mean, G_mean, A_coarse_mean, G_coarse_mean, F_coarse_mean
 
-def update_covariances(A, G, A_coarse, G_coarse, F_coarse, arch, output_model, w, X, rng, cov_timescale, chunk_size):
+    if has_aux:
+        A_mean_, G_mean_ = {}, {}
+        for i in range(nlayers):
+            for j in range(nlayers):
+                A_mean_[(i, j)] = A_sum_[(i, j)] / batch_size
+                G_mean_[(i, j)] = G_sum_[(i, j)] / batch_size
+    
+        return A_mean, G_mean, A_coarse_mean, G_coarse_mean, F_coarse_mean, A_mean_, G_mean_
+    else:
+        return A_mean, G_mean, A_coarse_mean, G_coarse_mean, F_coarse_mean
+
+def update_covariances(A, G, A_coarse, G_coarse, F_coarse, arch, output_model, w, X, rng, cov_timescale, chunk_size, A_, G_, has_aux=False):
     """Exponential moving average of the covariances."""
     A, G = dict(A), dict(G)
-    curr_A, curr_G, curr_A_coarse, curr_G_coarse, curr_F_coarse = estimate_covariances(arch, output_model, w, X, rng, chunk_size)
+    curr_A, curr_G, curr_A_coarse, curr_G_coarse, curr_F_coarse, *_ = estimate_covariances(arch, output_model, w, X, rng, chunk_size, has_aux)
     ema_param = kfac_util.get_ema_param(cov_timescale)
     for k in A.keys():
         A[k] = ema_param * A[k] + (1-ema_param) * curr_A[k]
@@ -164,7 +202,17 @@ def update_covariances(A, G, A_coarse, G_coarse, F_coarse, arch, output_model, w
     G_coarse = ema_param * G_coarse + (1-ema_param) * curr_G_coarse
     F_coarse = ema_param * F_coarse + (1-ema_param) * curr_F_coarse
 
-    return A, G, A_coarse, G_coarse, F_coarse
+    if has_aux:
+        curr_A_, curr_G_ = _
+        nlayers = len(A)
+        for i in range(nlayers):
+            for j in range(nlayers):
+                A_[(i, j)] = ema_param * A_[(i, j)] + (1-ema_param) * curr_A_[(i, j)]
+                G_[(i, j)] = ema_param * G_[(i, j)] + (1-ema_param) * curr_G_[(i, j)]
+
+        return A, G, A_coarse, G_coarse, F_coarse, A_, G_
+    else:
+        return A, G, A_coarse, G_coarse, F_coarse
 
 def compute_pi(A, G):
     return np.sqrt((np.trace(A) * G.shape[0]) / (A.shape[0] * np.trace(G)))
@@ -189,6 +237,124 @@ def compute_eigs(arch, A, G):
         G_eig[out_name] = eigh(G[out_name])
         pi[out_name] = compute_pi(A[in_name], G[out_name])
     return A_eig, G_eig, pi
+
+## ------------------------------------
+## enriched coarse-space util functions
+## ------------------------------------
+
+def compute_eigv_importance(arch, A_eig, G_eig, grad_w):
+    param_grad = arch.unflatten(grad_w)
+    result = {}
+    for in_name, out_name in arch.param_info:
+        grad_W, grad_b = param_grad[out_name]
+        grad_Wb = np.vstack([grad_W, grad_b.reshape((1, -1))])
+
+        # efficient kronecker-factored matrix-transpose times vector
+        # to compute projection of layer eigenvectors on gradient, i.e.:
+        # np.kron(A_eig[in_name][1], G_eig[out_name][1]).T @ grad_Wb.reshape((1, -1))
+        result_Wb = A_eig[in_name][1].T @ grad_Wb @ G_eig[out_name][1]
+
+        result_W, result_b = result_Wb[:-1, :], result_Wb[-1, :]
+        result[out_name] = (result_W, result_b)
+    return result
+
+compute_eigv_importance = jit(compute_eigv_importance, static_argnums=(0,))
+
+def compute_important_eigv_inds(importance, neigv):
+    important_eigv_inds = {}
+    for key in importance.keys():
+        importance_W, importance_b = importance[key]
+        importance_Wb = np.vstack([importance_W, importance_b.reshape((1, -1))]).reshape((-1,))
+        important_eigv_inds[key] = np.argsort( np.abs( importance_Wb ) )[-neigv:]
+    return important_eigv_inds
+
+compute_important_eigv_inds = jit(compute_important_eigv_inds, static_argnums=(1,))
+
+def compute_kron_prod_col(x, y, index):
+    xcol = index // y.shape[1]
+    ycol = index % y.shape[1]
+    return np.kron( x[:, xcol].reshape((-1, 1)), y[:, ycol].reshape((-1, 1)) )
+
+compute_kron_prod_col = jit(compute_kron_prod_col)
+
+def compute_selected_kron_prod_cols(arch, A_eig, G_eig, important_eigv_inds):
+    eigvs_stacked = {}
+    for in_name, out_name in arch.param_info:
+        eigvs = []
+        for eigv_ind in important_eigv_inds[out_name]:
+            eigv = compute_kron_prod_col(A_eig[in_name][1], G_eig[out_name][1], eigv_ind)
+            eigvs.append( eigv )
+        eigvs_stacked[out_name] = np.vstack([eigv.T[0] for eigv in eigvs])
+    return eigvs_stacked
+
+compute_selected_kron_prod_cols = jit(compute_selected_kron_prod_cols, static_argnums=(0,))
+
+def concat_const_and_eigv_basis(blk, importance, eigv_basis):
+    const_basis = {}
+    basis = {}
+    for index, key in enumerate(sorted(importance.keys())):
+        npk = blk[index+1] - blk[index]
+        const_basis[key] = np.ones((1, npk)) / scale_fn(npk)
+        basis[key] = np.vstack([const_basis[key], eigv_basis[key]])
+    return basis
+
+def compute_restriction_matrix(arch, state, importance, nbasis, basis):
+    nlayers = len(arch.param_info)
+    nparams = len(state['w'])
+    perm = state['perm']
+    blk = state['blk']
+    Z = np.zeros((nbasis*nlayers, nparams), dtype=onp.float32)
+    for index, key in enumerate(sorted(importance.keys())):
+        row = perm[key]
+        offset = nbasis*row
+        Z = Z.at[offset:offset+nbasis, blk[index]:blk[index+1]].set(basis[key])
+        #Z = dynamic_update_slice(Z, basis[key], (np.uint32(offset), blk[index]))
+    return Z
+
+def recompute_coarse_fisher(arch, A_, G_, nbasis, basis):
+    nlayers = len(arch.param_info)
+    F_hat_coarse = np.zeros((nbasis*nlayers, nbasis*nlayers))
+    for i, (_, out_name_i) in enumerate(arch.param_info):
+        for j, (_, out_name_j) in enumerate(arch.param_info):
+            Aij = A_[(i, j)]
+            Gij = G_[(i, j)]
+
+            Aij_batched = np.stack([Aij for _ in range(nbasis)])
+            GijT_batched = np.stack([Gij.T for _ in range(nbasis)])
+
+            ZjT = np.transpose( basis[out_name_j].T.reshape((Aij.shape[1], Gij.shape[1], -1)), axes=[2, 0, 1] )
+
+            A_kron_G_times_ZjT = batch_matmul( Aij_batched, batch_matmul(ZjT, GijT_batched ) )
+
+            Zi_times_A_kron_G_times_ZjT = basis[out_name_i] @ np.transpose( A_kron_G_times_ZjT, axes=[1, 2, 0] ).reshape((-1, nbasis))
+
+            F_hat_coarse = F_hat_coarse.at[i*nbasis:(i+1)*nbasis, j*nbasis:(j+1)*nbasis].set(Zi_times_A_kron_G_times_ZjT)
+    return F_hat_coarse
+
+recompute_coarse_fisher = jit(recompute_coarse_fisher, static_argnums=(0, 3))
+
+def recompute_enriched_coarse_space(arch, state, grad_w, nbasis):
+    # compute per-layer eigv importance based on projection on grad_w
+    importance = compute_eigv_importance(arch, state['A_eig'], state['G_eig'], grad_w)
+
+    # compute `nbasis-1` important per-layer eigv indices
+    important_eigv_inds = compute_important_eigv_inds(importance, nbasis-1)
+
+    # selectively compute eigenvectors based on precomputed important per-layer indices
+    eigv_basis = compute_selected_kron_prod_cols(arch, state['A_eig'], state['G_eig'], important_eigv_inds)
+
+    # concat const and eigv basis
+    basis = concat_const_and_eigv_basis(state['blk'], importance, eigv_basis)
+
+    # compute Z
+    Z = compute_restriction_matrix(arch, state, importance, nbasis, basis)
+
+    # compute Z F_hat Z.T
+    F_hat_coarse = recompute_coarse_fisher(arch, state['A_'], state['G_'], nbasis, basis)
+
+    return Z, Z@Z.T, F_hat_coarse
+
+##
 
 def nll_cost(apply_fn, nll_fn, unflatten_fn, w, X, T):
     logits = apply_fn(unflatten_fn(w), X)
@@ -351,7 +517,7 @@ def compute_update(coeffs, dirs):
         ans = ans + coeff * v
     return ans
 
-# Two-Level K-FAC (sum of inverses)
+# Two-Level K-FAC (sum of inverses - standard Nicolaides coarse space)
 def compute_natgrad_correction_cgc_core(param_info, flatten_fn, unflatten_fn, ZZt, grad_w, F_coarse, gamma):
     # compute coarse grad
     grad_dict = unflatten_fn(grad_w)
@@ -379,10 +545,28 @@ def compute_natgrad_correction_cgc_core(param_info, flatten_fn, unflatten_fn, ZZ
 
 compute_natgrad_correction_cgc_core = jit(compute_natgrad_correction_cgc_core, static_argnums=(0,1,2))
 
+# Two-Level K-FAC (sum of inverses - enriched coarse space)
+def compute_natgrad_correction_cgc_enriched(state, arch, grad_w, F_coarse, gamma):
+    Z = state['Z']
+    ZZt = state['ZZt']
+
+    grad_w_coarse = Z @ grad_w.reshape((-1, 1))
+
+    natgrad_w_coarse = np.linalg.solve(F_coarse + (gamma**2)*ZZt, grad_w_coarse)
+
+    natgrad_corr_w = (Z.T @ natgrad_w_coarse).reshape((-1,))
+
+    return natgrad_corr_w
+
 # Two-Level K-FAC (sum of inverses)
 def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
-    return compute_natgrad_correction_cgc_core(arch.param_info, arch.flatten,
-            arch.unflatten, state['ZZt'], grad_w, F_coarse, gamma)
+    # Note: we force the use of F_hat_coarse when using enriched coarse spaces
+    use_enriched_coarse_space = (state['F_hat_coarse'].shape[0] > len(state['A'].keys()))
+    if use_enriched_coarse_space:
+        return compute_natgrad_correction_cgc_enriched(state, arch, grad_w, state['F_hat_coarse'], gamma)
+    else:
+        return compute_natgrad_correction_cgc_core(arch.param_info, arch.flatten,
+                arch.unflatten, state['ZZt'], grad_w, F_coarse, gamma)
     # Use the code below only for debugging
     # compute coarse grad
     grad_dict = arch.unflatten(grad_w)
@@ -652,8 +836,12 @@ def kfac_init(arch, output_model, X_train, T_train, config, random_seed=0):
     state['w_avg'] = state['w']
     
     key, state['rng'] = random.split(state['rng'])
-    state['A'], state['G'], state['A_coarse'], state['G_coarse'], state['F_coarse'] = estimate_covariances(
-        arch, output_model, state['w'], X_train, key, config['chunk_size'])
+    state['A'], state['G'], state['A_coarse'], state['G_coarse'], state['F_coarse'], *_ = estimate_covariances(
+        arch, output_model, state['w'], X_train, key, config['chunk_size'], has_aux=(config['nbasis'] > 1))
+    if config['nbasis'] > 1:
+        state['A_'], state['G_'] = _
+    else:
+        state['A_'], state['G_'] = {}, {}
 
     state['A_eig'], state['G_eig'], state['pi'] = compute_eigs(
         arch, state['A'], state['G'])
@@ -731,15 +919,24 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     if state['step'] % config['cov_update_interval'] == 0:
         batch_size_samp = get_sample_batch_size(batch_size, config)
         X_samp = X_batch[:batch_size_samp, :]
-        state['A'], state['G'], state['A_coarse'], state['G_coarse'], state['F_coarse'] = update_covariances(
+        state['A'], state['G'], state['A_coarse'], state['G_coarse'], state['F_coarse'], *_ = update_covariances(
             state['A'], state['G'], state['A_coarse'], state['G_coarse'], state['F_coarse'], arch, output_model, state['w'], X_samp, state['rng'],
-            config['cov_timescale'], config['chunk_size'])
-        state['F_hat_coarse'] = state['A_coarse'] * state['G_coarse']
+            config['cov_timescale'], config['chunk_size'], state['A_'], state['G_'], has_aux=(config['nbasis'] > 1))
+        if config['nbasis'] > 1:
+            state['A_'], state['G_'] = _
+        if config['nbasis'] == 1:
+            state['F_hat_coarse'] = state['A_coarse'] * state['G_coarse']
 
     # Update the inverses
     if state['step'] % config['eig_update_interval'] == 0:
         state['A_eig'], state['G_eig'], state['pi'] = compute_eigs(
             arch, state['A'], state['G'])
+
+    # Recompute enriched coarse space utils (Z, ZZt, F_hat_coarse)
+    if (config['nbasis'] > 1) and \
+            ((state['step'] == 1) or \
+            (state['step'] % config['eig_update_interval'] == 0)):
+        state['Z'], state['ZZt'], state['F_hat_coarse'] = recompute_enriched_coarse_space(arch, state, grad_w, config['nbasis'])
 
     # Update gamma
     if config['adapt_gamma']:
@@ -759,7 +956,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
 
         # preconditioner
         precon = lambda grad_w: apply_preconditioner(state, arch, output_model,
-                grad_w, X_batch, T_batch, state['F_coarse'], gamma, config)
+                grad_w, X_batch, T_batch, state['F_hat_coarse'], gamma, config)
 
         # GGN-vector product
         mvp = lambda v: gnhvp(arch, output_model, state['w'], X_batch, T_batch, v, config['chunk_size'])
@@ -769,7 +966,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
 
         # initial estimate for current step
         if 'Qb' in config['optimizer']:
-            x0 = compute_natgrad_correction_cgc(state, arch, grad_w, state['F_coarse'], gamma)
+            x0 = compute_natgrad_correction_cgc(state, arch, grad_w, state['F_hat_coarse'], gamma)
         else:
             x0 = None
 
@@ -820,7 +1017,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         if state['step'] % config['conjgrad_benchmark_interval'] == 0:
             state['conjgrad_val'], state['conjgrad_relres'] = \
             cg_benchmark(state, arch, output_model, X_batch, T_batch,
-                    state['F_coarse'], gamma, config, mvp_damp, grad_w,
+                    state['F_hat_coarse'], gamma, config, mvp_damp, grad_w,
                     config['conjgrad_tol'], config['conjgrad_maxiter'])
 
     # Store values for best_idx in state
