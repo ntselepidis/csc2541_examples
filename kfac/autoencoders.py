@@ -61,7 +61,7 @@ def default_config():
     config['cov_batch_ratio'] = 1/8
     config['cov_timescale'] = 20
     
-    config['eig_update_interval'] = 20
+    config['eig_update_interval'] = 5
 
     config['lambda_update_interval'] = 5
     config['init_lambda'] = 150
@@ -85,8 +85,8 @@ def default_config():
     config['random_seed'] = 0
     config['use_momentum'] = 1
     config['adapt_gamma'] = 1
-    config['conjgrad_tol'] = 5e-4
-    config['conjgrad_maxiter'] = 100
+    config['conjgrad_tol'] = 5e-6
+    config['conjgrad_maxiter'] = 100 # 40
     config['conjgrad_benchmark_interval'] = config['max_iter'] + 10 # disabled by default
     
     return config

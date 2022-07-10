@@ -27,6 +27,7 @@ def main():
         df = df[df['iter'] <= args.stop_iter]
 
     #df = df[~(df['prec'].str.contains('m1|m2|kfac-m3|Qb'))]
+    df = df[~(df['prec'].str.contains('x0'))]
 
     drop_precs = [
         #'none',
@@ -35,14 +36,26 @@ def main():
         'kfac-cgc-m1',
         'kfac-cgc-m2',
         #'kfac-cgc-m3',
-        #'kfac-m3',
+        'kfac-m3',
         'kfac-m2',
         'kfac-cgc-m1-Qb',
         'kfac-cgc-m2-Qb',
         #'kfac-cgc-m3-Qb',
-        #'kfac-m3-Qb',
+        'kfac-m3-Qb',
         'kfac-m2-Qb',
-        ]
+        'none-x0',
+        'kfac-x0',
+        'kfac-cgc-x0',
+        'kfac-cgc-m1-x0',
+        'kfac-cgc-m2-x0',
+        'kfac-cgc-m3-x0',
+        'kfac-m3-x0',
+        'kfac-m2-x0',
+        'kfac-cgc-m1-Qb-plus-Ptx0',
+        'kfac-cgc-m2-Qb-plus-Ptx0',
+        'kfac-cgc-m3-Qb-plus-Ptx0',
+        'kfac-m3-Qb-plus-Ptx0',
+        'kfac-m2-Qb-plus-Ptx0']
 
     for drop_prec in drop_precs:
         df = df[~(df['prec'] == drop_prec)]
