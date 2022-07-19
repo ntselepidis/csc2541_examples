@@ -4,3 +4,4 @@ tensorflow-datasets
 tensorboardX
 matplotlib
 argparse
+parse
