@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
+from parse import *
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -22,6 +23,11 @@ def main():
 
     print(f'Reading {args.filename} ...')
     df = pd.read_csv(args.filename)
+
+    experiment, nbasis, iteration = parse(
+            'cg_benchmarks/cg_benchmark_{}_nbasis-{}_default_GPU_cg_benchmark_0/iter-{}.csv', os.path.normpath(args.filename))
+
+    experiment, nbasis, iteration = experiment.upper(), int(nbasis), int(iteration) + 1
 
     if args.stop_iter > 0:
         df = df[df['iter'] <= args.stop_iter]
@@ -62,11 +68,22 @@ def main():
 
     sns.set_style("darkgrid")
 
+    df.loc[ (df['prec'] != 'none') & (df['prec'] != 'kfac'), 'prec' ] += '(' + str(nbasis) + ')'
+
     fig, axs = plt.subplots(1, 2, figsize=(2*6.4, 4.8))
-    fig.suptitle(f'conjgrad convergence plots ( {args.filename} )')
+    #fig.suptitle(f'conjgrad convergence plots ( {args.filename} )')
+    fig.suptitle(f'{experiment}: Convergence of CG at step {iteration} of non-linear optimization')
 
     sns.lineplot(ax=axs[0], data=df, x="iter", y="val", hue="prec")
     sns.lineplot(ax=axs[1], data=df, x="iter", y="relres", hue="prec")
+
+    axs[0].set(xlabel='CG Iterations', ylabel='Value of Quadratic')
+    axs[1].set(xlabel='CG Iterations', ylabel='Relative Residual')
+
+    # change title of legends ('prec' => 'preconditioner')
+    for i in range(2):
+        handles, labels = axs[i].get_legend_handles_labels()
+        axs[i].legend(handles=handles[1:], labels=labels[1:], title="preconditioner")
 
     if args.logscale:
         axs[1].set_yscale('log')
