@@ -40,7 +40,7 @@ def main():
         'kfac-m2',
         'kfac-cgc-m1-Qb',
         'kfac-cgc-m2-Qb',
-        #'kfac-cgc-m3-Qb',
+        'kfac-cgc-m3-Qb',
         'kfac-m3-Qb',
         'kfac-m2-Qb',
         'none-x0',

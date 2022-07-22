@@ -2,7 +2,7 @@
 
 dir=$1
 
-stop_iter=100
+stop_iter=150
 logscale=0
 
 for f in `ls $dir`; do
