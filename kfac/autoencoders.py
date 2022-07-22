@@ -51,7 +51,7 @@ def get_architecture(input_size, layer_sizes):
 
 def default_config():
     config = {}
-    config['max_iter'] = 20000
+    config['max_iter'] = 3000
     config['initial_batch_size'] = 1000
     config['final_batch_size_iter'] = 500
     config['batch_size_granularity'] = 50
