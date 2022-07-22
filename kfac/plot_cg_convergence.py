@@ -14,6 +14,7 @@ def get_args():
     parser.add_argument('--stop_iter', default=-1, type=int)
     parser.add_argument('--output', default='png', choices=['pdf', 'png'])
     parser.add_argument('--dpi', default=300)
+    parser.add_argument('--force_format', default=0, choices=[0, 1], type=int)
     args = parser.parse_args()
     return args
 
@@ -70,12 +71,47 @@ def main():
 
     df.loc[ (df['prec'] != 'none') & (df['prec'] != 'kfac'), 'prec' ] += '(' + str(nbasis) + ')'
 
+    # Attention !!!
+    # The code in the branch below is optional and needs to be updated whenever
+    # drop_precs list is modified. This is only a hacky way for ensuring color
+    # consistency of the methods/lines in my thesis.
+    palette = None
+    if args.force_format:
+        # create categorical optimizers for easier sorting
+        df['prec_cat'] = pd.Categorical(
+                df['prec'],
+                categories=[
+                    'none',
+                    'kfac',
+                    'kfac-cgc(' + str(nbasis) + ')',
+                    'kfac-cgc-m1(' + str(nbasis) + ')',
+                    'kfac-cgc-m2-Qb(' + str(nbasis) + ')',
+                    'kfac-cgc-m3(' + str(nbasis) + ')',
+                    'kfac-m3-Qb(' + str(nbasis) + ')',
+                    'kfac-m2-Qb(' + str(nbasis) + ')'
+                    ],
+                ordered=True,
+                )
+        df = df.sort_values('prec_cat', kind='stable')
+
+        color = sns.color_palette()
+        palette = {
+                'none' : color[0],
+                'kfac' : color[1],
+                'kfac-cgc(' + str(nbasis) + ')' : color[2],
+                'kfac-cgc-m1(' + str(nbasis) + ')': color[4],
+                'kfac-cgc-m2-Qb(' + str(nbasis) + ')': color[5],
+                'kfac-cgc-m3(' + str(nbasis) + ')': color[3],
+                'kfac-m3-Qb(' + str(nbasis) + ')': color[6],
+                'kfac-m2-Qb(' + str(nbasis) + ')': color[7],
+                }
+
     fig, axs = plt.subplots(1, 2, figsize=(2*6.4, 4.8))
     #fig.suptitle(f'conjgrad convergence plots ( {args.filename} )')
     fig.suptitle(f'{experiment}: Convergence of CG at step {iteration} of non-linear optimization')
 
-    sns.lineplot(ax=axs[0], data=df, x="iter", y="val", hue="prec")
-    sns.lineplot(ax=axs[1], data=df, x="iter", y="relres", hue="prec")
+    sns.lineplot(ax=axs[0], data=df, x="iter", y="val", hue="prec", palette=palette)
+    sns.lineplot(ax=axs[1], data=df, x="iter", y="relres", hue="prec", palette=palette)
 
     axs[0].set(xlabel='CG Iterations', ylabel='Value of Quadratic')
     axs[1].set(xlabel='CG Iterations', ylabel='Relative Residual')
