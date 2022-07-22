@@ -303,7 +303,7 @@ def compute_restriction_matrix(arch, state, importance, nbasis, basis):
     nparams = len(state['w'])
     perm = state['perm']
     blk = state['blk']
-    Z = np.zeros((nbasis*nlayers, nparams), dtype=onp.float32)
+    Z = np.zeros((nbasis*nlayers, nparams))
     for index, key in enumerate(sorted(importance.keys())):
         row = perm[key]
         offset = nbasis*row
@@ -755,28 +755,28 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
                        'kfac',
                        'kfac-cgc',
                        'kfac-cgc-m1',
-                       'kfac-cgc-m2',
+                       #'kfac-cgc-m2',
                        'kfac-cgc-m3',
-                       'kfac-m3',
-                       'kfac-m2',
-                       'kfac-cgc-m1-Qb',
+                       #'kfac-m3',
+                       #'kfac-m2',
+                       #'kfac-cgc-m1-Qb',
                        'kfac-cgc-m2-Qb',
-                       'kfac-cgc-m3-Qb',
+                       #'kfac-cgc-m3-Qb',
                        'kfac-m3-Qb',
-                       'kfac-m2-Qb',
-                       'none-x0',
-                       'kfac-x0',
-                       'kfac-cgc-x0',
-                       'kfac-cgc-m1-x0',
-                       'kfac-cgc-m2-x0',
-                       'kfac-cgc-m3-x0',
-                       'kfac-m3-x0',
-                       'kfac-m2-x0',
-                       'kfac-cgc-m1-Qb-plus-Ptx0',
-                       'kfac-cgc-m2-Qb-plus-Ptx0',
-                       'kfac-cgc-m3-Qb-plus-Ptx0',
-                       'kfac-m3-Qb-plus-Ptx0',
-                       'kfac-m2-Qb-plus-Ptx0']
+                       'kfac-m2-Qb']
+                       #'none-x0',
+                       #'kfac-x0',
+                       #'kfac-cgc-x0',
+                       #'kfac-cgc-m1-x0',
+                       #'kfac-cgc-m2-x0',
+                       #'kfac-cgc-m3-x0',
+                       #'kfac-m3-x0',
+                       #'kfac-m2-x0',
+                       #'kfac-cgc-m1-Qb-plus-Ptx0',
+                       #'kfac-cgc-m2-Qb-plus-Ptx0',
+                       #'kfac-cgc-m3-Qb-plus-Ptx0',
+                       #'kfac-m3-Qb-plus-Ptx0',
+                       #'kfac-m2-Qb-plus-Ptx0']
 
     # Compute initial estimate for two-level preconditioned CG
     Qb = compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
