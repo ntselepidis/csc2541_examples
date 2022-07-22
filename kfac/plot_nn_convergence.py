@@ -34,6 +34,8 @@ def get_args():
     parser.add_argument('--logscale', default=1, choices=[0, 1], type=int)
     parser.add_argument('--output', default='pdf', choices=['pdf', 'png'], type=str)
     parser.add_argument('--dpi', default=300, type=int)
+    parser.add_argument('--keep', default=None, type=str) # keep matches
+    parser.add_argument('--drop', default=None, type=str) # drop matches
     args = parser.parse_args()
     return args
 
@@ -53,21 +55,31 @@ if __name__ == '__main__':
         if files == []:
             continue
 
-        print(f'Processing {root}/{files[0]} ...')
+        if 'cg_benchmark' in root:
+            print(f'Skipping {root}/{files[0]} ...')
+            continue
+        else:
+            print(f'Processing {root}/{files[0]} ...')
 
-        experiment, optimizer, nbasis, momentum, init_lambda, adapt_gamma, comment = parse(
-                "{}_{}_nbasis-{}_mom-{}_init-lambda-{}_adapt-gamma-{}_{}", os.path.basename(os.path.normpath(root)))
+        _date, _time, _node, experiment, optimizer, nbasis, momentum, init_lambda, adapt_gamma, comment = parse(
+                "{}_{}_{}_{}_{}_nbasis-{}_mom-{}_init-lambda-{}_adapt-gamma-{}_{}", os.path.basename(os.path.normpath(root)))
 
         seed = int(comment[-1])
 
+        if (args.keep != None) and (args.keep not in root):
+            continue
+        if (args.drop != None) and (args.drop in root):
+            continue
+
         if args.scalar == 'beta' and int(momentum) == 0:
             continue
-        if 'cgc' in optimizer and int(nbasis) != args.nbasis:
-            continue
-        if 'cgc' in optimizer:
-            optimizer = optimizer + '(' + nbasis + ')'
         if args.momentum != 2 and args.momentum != int(momentum):
             continue
+        if 'cgc' in optimizer:
+            if int(nbasis) == args.nbasis:
+                optimizer = optimizer + '(' + nbasis + ')'
+            else:
+                continue
         if int(momentum) == 1:
             optimizer = optimizer + ' with mom'
 
@@ -146,8 +158,12 @@ if __name__ == '__main__':
     if args.logscale:
         ax.set_yscale('log')
 
-    output_dir = f'nn_convergence_plots_{args.logdir}'
+    output_dir = f'nn_convergence_plots_{os.path.basename(os.path.normpath(args.logdir))}'
     output_file = f'{args.scalar}_mom-{args.momentum}_nbasis-{args.nbasis}_iter-stop-{args.iter_stop}_logscale-{args.logscale}'
+    if args.keep != None:
+        output_file += f'_keep-{args.keep}'
+    if args.drop != None:
+        output_file += f'_drop-{args.drop}'
     os.makedirs(output_dir, exist_ok=True)
 
     plt.savefig(f'{output_dir}/{output_file}.{args.output}', dpi=args.dpi)
