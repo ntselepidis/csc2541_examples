@@ -687,44 +687,6 @@ def compute_gammas(curr_gamma, step, config):
         gammas = [curr_gamma]
     return gammas
 
-def update_gamma(state, arch, output_model, X, T, config):
-    curr_gamma = state['gamma']
-    gamma_less = onp.maximum(
-        curr_gamma * config['gamma_drop']**config['gamma_update_interval'],
-        config['gamma_min'])
-    gamma_more = onp.minimum(
-        curr_gamma * config['gamma_boost']**config['gamma_update_interval'],
-        config['gamma_max'])
-    gammas = [gamma_less, curr_gamma, gamma_more]
-    
-    grad_w = compute_gradient(
-        arch, output_model, state['w'], X, T, config['weight_cost'],
-        config['chunk_size'])
-    
-    results = []
-    for gamma in gammas:
-
-        natgrad_w = compute_natgrad_from_eigs(
-            arch, grad_w, state['A_eig'], state['G_eig'], state['pi'], gamma)
-
-        if config['has_correction']:
-            natgrad_corr = config['natgrad_correction_fn'](state, arch, grad_w, natgrad_w, state['F_coarse'], gamma)
-            natgrad_w = natgrad_w + natgrad_corr
-
-        prev_update = state['update']
-        coeffs, _ = compute_step_coeffs(
-            arch, output_model, state['w'], X, T, [-natgrad_w, prev_update],
-            grad_w, config['weight_cost'], state['lambda'], config['chunk_size'])
-        update = compute_update(coeffs, [-natgrad_w, prev_update])
-        new_w = state['w'] + update
-        
-        results.append(compute_cost(
-            arch, output_model.nll_fn, new_w, X, T, config['weight_cost'],
-            config['chunk_size']))
-        
-    best_idx = onp.argmin(results)
-    return gammas[best_idx]
-
 def update_lambda(arch, output_model, lmbda, old_w, new_w, X, T, quad_dec, config):
     old_cost = compute_cost(
         arch, output_model.nll_fn, old_w, X, T, config['weight_cost'], config['chunk_size'])
