@@ -518,7 +518,7 @@ def compute_update(coeffs, dirs):
     return ans
 
 # Two-Level K-FAC (sum of inverses - standard Nicolaides coarse space)
-def compute_natgrad_correction_cgc_core(param_info, flatten_fn, unflatten_fn, ZZt, grad_w, F_coarse, gamma):
+def compute_natgrad_correction_cgc_const_basis(param_info, flatten_fn, unflatten_fn, ZZt, grad_w, F_coarse, gamma):
     # compute coarse grad
     grad_dict = unflatten_fn(grad_w)
     grad_Wb_mean = {out_name: 0.0 for _, out_name in param_info}
@@ -543,10 +543,10 @@ def compute_natgrad_correction_cgc_core(param_info, flatten_fn, unflatten_fn, ZZ
 
     return natgrad_corr_w
 
-compute_natgrad_correction_cgc_core = jit(compute_natgrad_correction_cgc_core, static_argnums=(0,1,2))
+compute_natgrad_correction_cgc_const_basis = jit(compute_natgrad_correction_cgc_const_basis, static_argnums=(0,1,2))
 
 # Two-Level K-FAC (sum of inverses - enriched coarse space)
-def compute_natgrad_correction_cgc_enriched(state, arch, grad_w, F_coarse, gamma):
+def compute_natgrad_correction_cgc_general(state, arch, grad_w, F_coarse, gamma):
     Z = state['Z']
     ZZt = state['ZZt']
 
@@ -563,9 +563,9 @@ def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
     # Note: we force the use of F_hat_coarse when using enriched coarse spaces
     use_enriched_coarse_space = (state['F_hat_coarse'].shape[0] > len(state['A'].keys()))
     if use_enriched_coarse_space:
-        return compute_natgrad_correction_cgc_enriched(state, arch, grad_w, state['F_hat_coarse'], gamma)
+        return compute_natgrad_correction_cgc_general(state, arch, grad_w, state['F_hat_coarse'], gamma)
     else:
-        return compute_natgrad_correction_cgc_core(arch.param_info, arch.flatten,
+        return compute_natgrad_correction_cgc_const_basis(arch.param_info, arch.flatten,
                 arch.unflatten, state['ZZt'], grad_w, F_coarse, gamma)
 
 # Computes P*v = (I - F*Q)*v or P.transpose()*v = (I - Q*F)*v
