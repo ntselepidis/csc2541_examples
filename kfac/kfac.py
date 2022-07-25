@@ -567,37 +567,6 @@ def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
     else:
         return compute_natgrad_correction_cgc_core(arch.param_info, arch.flatten,
                 arch.unflatten, state['ZZt'], grad_w, F_coarse, gamma)
-    # Use the code below only for debugging
-    # compute coarse grad
-    grad_dict = arch.unflatten(grad_w)
-    grad_Wb_mean = {out_name: 0.0 for _, out_name in arch.param_info}
-    for _, out_name in arch.param_info:
-        grad_W, grad_b = grad_dict[out_name]
-        grad_Wb = np.vstack([grad_W, grad_b.reshape((1, -1))])
-        grad_Wb_mean[out_name] = np.sum(grad_Wb) / scale_fn( onp.prod(grad_Wb.shape) )
-
-    grad_w_coarse = np.vstack([grad_Wb_mean[name] for name in grad_Wb_mean])
-
-    # Z = state['Z']
-    # grad_w_coarse_2 = Z @ grad_w.reshape((-1, 1))
-
-    # solve for coarse natgrad
-    natgrad_w_coarse = np.linalg.solve(F_coarse + (gamma**2)*state['ZZt'], grad_w_coarse)
-    # natgrad_w_coarse = np.linalg.solve(F_coarse + (gamma**2)*np.eye(F_coarse.shape[0]), grad_w_coarse)
-    # natgrad_w_coarse_2 = np.linalg.solve(F_coarse + (gamma**2)*np.eye(F_coarse.shape[0]), grad_w_coarse_2)
-
-    # natgrad_corr_w_2 = Z.T @ natgrad_w_coarse_2
-
-    # prolongate
-    natgrad_corr_dict = {out_name: 0.0 for _, out_name in arch.param_info}
-    for index, (_, out_name) in enumerate(arch.param_info):
-        W_shape, b_shape = grad_dict[out_name][0].shape, grad_dict[out_name][1].shape
-        val = natgrad_w_coarse[index] / scale_fn( onp.prod(W_shape) + onp.prod(b_shape) )
-        natgrad_corr_dict[out_name] = (val*np.ones(W_shape), val*np.ones(b_shape))
-
-    natgrad_corr_w = arch.flatten(natgrad_corr_dict)
-
-    return natgrad_corr_w
 
 # Computes P*v = (I - F*Q)*v or P.transpose()*v = (I - Q*F)*v
 def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, chunk_size, transpose):
