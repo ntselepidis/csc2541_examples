@@ -352,7 +352,7 @@ def recompute_enriched_coarse_space(arch, state, grad_w, nbasis):
     # compute Z F_hat Z.T
     F_hat_coarse = recompute_coarse_fisher(arch, state['A_'], state['G_'], nbasis, basis)
 
-    return Z, Z@Z.T, F_hat_coarse
+    return Z, Z@Z.T, F_hat_coarse, basis
 
 ##
 
@@ -618,6 +618,7 @@ def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, chunk_size, transp
     return result
 
 # Two-Level K-FAC (inverse of sum, non-singular (v1) / singular (v2) F_coarse)
+# TODO(nikolas): Current implementation is hacky. Needs heavy optimization.
 def compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma, variant):
 
     # Unpack utils
@@ -625,16 +626,39 @@ def compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma,
     perm = state['perm']
     blk = state['blk']
 
-    # compute invF_dot_Zt = F \ Z.T
-    Zt_col = np.sum(Z, axis=0)
-    invF_dot_Zt_col = compute_natgrad_from_eigs(
-        arch, Zt_col, state['A_eig'], state['G_eig'], state['pi'], gamma)
+    nlayers = len(blk)-1
+    nbasis = Z.shape[0] // nlayers
 
-    invF_dot_Zt = np.zeros(Z.T.shape)
-    index = 0
-    for key in sorted(perm.keys()):
-        invF_dot_Zt = invF_dot_Zt.at[blk[index]:blk[index+1], perm[key]].set(invF_dot_Zt_col[blk[index]:blk[index+1]])
-        index = index + 1
+    # compute invF_dot_Zt = F \ Z.T
+    if nbasis > 1:
+        # general case of multiple basis vectors per layer
+        basis = state['basis']
+        basis_hstacked = np.hstack([basis[key] for key in basis.keys()])
+
+        invF_dot_Zt_multicol = np.zeros(basis_hstacked.T.shape)
+        for bi in range(nbasis):
+            Zt_col = basis_hstacked[bi, :].T
+            invF_dot_Zt_col = compute_natgrad_from_eigs(
+                arch, Zt_col, state['A_eig'], state['G_eig'], state['pi'], gamma)
+            invF_dot_Zt_multicol = invF_dot_Zt_multicol.at[:, bi].set(invF_dot_Zt_col)
+
+        invF_dot_Zt = np.zeros(Z.T.shape)
+        index = 0
+        for key in sorted(perm.keys()):
+            offset = nbasis*perm[key]
+            invF_dot_Zt = invF_dot_Zt.at[blk[index]:blk[index+1], offset:offset+nbasis].set(invF_dot_Zt_multicol[blk[index]:blk[index+1], :])
+            index = index + 1
+    else:
+        # special case for single basis vector per layer
+        Zt_col = np.sum(Z, axis=0)
+        invF_dot_Zt_col = compute_natgrad_from_eigs(
+            arch, Zt_col, state['A_eig'], state['G_eig'], state['pi'], gamma)
+
+        invF_dot_Zt = np.zeros(Z.T.shape)
+        index = 0
+        for key in sorted(perm.keys()):
+            invF_dot_Zt = invF_dot_Zt.at[blk[index]:blk[index+1], perm[key]].set(invF_dot_Zt_col[blk[index]:blk[index+1]])
+            index = index + 1
 
     # Zero-out diagonal of F_coarse
     F_coarse = F_coarse - np.diag(np.diag(F_coarse))
@@ -764,6 +788,8 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
                        #'kfac-cgc-m3-Qb',
                        'kfac-m3-Qb',
                        'kfac-m2-Qb']
+                       #'kfac-woodbury-v1',
+                       #'kfac-woodbury-v2',
                        #'none-x0',
                        #'kfac-x0',
                        #'kfac-cgc-x0',
@@ -799,6 +825,12 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
             _config['natgrad_correction_fn'] = \
                 lambda state, arch, grad_w, natgrad_w, F_coarse, gamma: \
                     compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
+        if 'woodbury' in prec:
+            _config['has_correction'] = True
+            variant = int(prec[-1])
+            _config['natgrad_correction_fn'] = \
+                lambda state, arch, grad_w, natgrad_w, F_coarse, gamma: \
+                    compute_natgrad_correction_woodbury(state, arch, natgrad_w, F_coarse, gamma, variant)
 
         # Setup preconditioner
         if prec != 'none':
@@ -936,7 +968,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     if (config['nbasis'] > 1) and \
             ((state['step'] == 1) or \
             (state['step'] % config['eig_update_interval'] == 0)):
-        state['Z'], state['ZZt'], state['F_hat_coarse'] = recompute_enriched_coarse_space(arch, state, grad_w, config['nbasis'])
+        state['Z'], state['ZZt'], state['F_hat_coarse'], state['basis'] = recompute_enriched_coarse_space(arch, state, grad_w, config['nbasis'])
 
     # Update gamma
     if config['adapt_gamma']:
