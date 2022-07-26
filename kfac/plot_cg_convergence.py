@@ -119,7 +119,7 @@ def main():
     # change title of legends ('prec' => 'preconditioner')
     for i in range(2):
         handles, labels = axs[i].get_legend_handles_labels()
-        axs[i].legend(handles=handles[1:], labels=labels[1:], title="preconditioner")
+        axs[i].legend(handles=handles, labels=labels, title="preconditioner")
 
     if args.logscale:
         axs[1].set_yscale('log')
