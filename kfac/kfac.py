@@ -289,12 +289,18 @@ def compute_selected_kron_prod_cols(arch, A_eig, G_eig, important_eigv_inds):
 
 compute_selected_kron_prod_cols = jit(compute_selected_kron_prod_cols, static_argnums=(0,))
 
-def concat_const_and_eigv_basis(blk, importance, eigv_basis):
+def concat_const_and_eigv_basis(blk, importance, eigv_basis, orthonormalize_basis=True):
     const_basis = {}
     basis = {}
     for index, key in enumerate(sorted(importance.keys())):
         npk = blk[index+1] - blk[index]
         const_basis[key] = np.ones((1, npk)) / scale_fn(npk)
+        if orthonormalize_basis:
+            u = const_basis[key].reshape((-1,))
+            for v in eigv_basis[key]:
+                u -= np.dot(v, u) * v
+            u /= np.linalg.norm(u)
+            const_basis[key] = u.reshape((1, -1))
         basis[key] = np.vstack([const_basis[key], eigv_basis[key]])
     return basis
 
