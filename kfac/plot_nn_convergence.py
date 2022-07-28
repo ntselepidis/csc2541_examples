@@ -75,7 +75,7 @@ if __name__ == '__main__':
             continue
         if args.momentum != 2 and args.momentum != int(momentum):
             continue
-        if 'cgc' in optimizer:
+        if ('cgc' in optimizer) or ('woodbury' in optimizer):
             if int(nbasis) == args.nbasis:
                 optimizer = optimizer + '(' + nbasis + ')'
             else:
@@ -105,13 +105,19 @@ if __name__ == '__main__':
                 'kfac',
                 'kfac-cgc(' + str(args.nbasis) + ')',
                 'kfac-cgc-m3(' + str(args.nbasis) + ')',
+                'kfac-woodbury-v1(' + str(args.nbasis) + ')',
+                'kfac-woodbury-v2(' + str(args.nbasis) + ')',
                 'kfac with mom',
                 'kfac-cgc(' + str(args.nbasis) + ') with mom',
                 'kfac-cgc-m3(' + str(args.nbasis) + ') with mom',
+                'kfac-woodbury-v1(' + str(args.nbasis) + ') with mom',
+                'kfac-woodbury-v2(' + str(args.nbasis) + ') with mom',
                 'conjgrad',
                 'kfac-conjgrad',
                 'kfac-cgc-conjgrad(' + str(args.nbasis) + ')',
                 'kfac-cgc-m3-conjgrad(' + str(args.nbasis) + ')',
+                'kfac-woodbury-conjgrad-v1(' + str(args.nbasis) + ')',
+                'kfac-woodbury-conjgrad-v2(' + str(args.nbasis) + ')',
                 ],
             ordered=True,
             )
@@ -120,16 +126,22 @@ if __name__ == '__main__':
     color = sns.color_palette()
 
     palette = {
-            'kfac'                                           : color[1],
-            'kfac-cgc(' + str(args.nbasis) + ')'             : color[2],
-            'kfac-cgc-m3(' + str(args.nbasis) + ')'          : color[3],
-            'kfac with mom'                                  : color[1],
-            'kfac-cgc(' + str(args.nbasis) + ') with mom'    : color[2],
-            'kfac-cgc-m3(' + str(args.nbasis) + ') with mom' : color[3],
-            'conjgrad'                                       : color[0],
-            'kfac-conjgrad'                                  : color[1],
-            'kfac-cgc-conjgrad(' + str(args.nbasis) + ')'    : color[2],
-            'kfac-cgc-m3-conjgrad(' + str(args.nbasis) + ')' : color[3]
+            'kfac'                                                : color[1],
+            'kfac-cgc(' + str(args.nbasis) + ')'                  : color[2],
+            'kfac-cgc-m3(' + str(args.nbasis) + ')'               : color[3],
+            'kfac-woodbury-v1(' + str(args.nbasis) + ')'          : color[4],
+            'kfac-woodbury-v2(' + str(args.nbasis) + ')'          : color[5],
+            'kfac with mom'                                       : color[1],
+            'kfac-cgc(' + str(args.nbasis) + ') with mom'         : color[2],
+            'kfac-cgc-m3(' + str(args.nbasis) + ') with mom'      : color[3],
+            'kfac-woodbury-v1(' + str(args.nbasis) + ') with mom' : color[4],
+            'kfac-woodbury-v2(' + str(args.nbasis) + ') with mom' : color[5],
+            'conjgrad'                                            : color[0],
+            'kfac-conjgrad'                                       : color[1],
+            'kfac-cgc-conjgrad(' + str(args.nbasis) + ')'         : color[2],
+            'kfac-cgc-m3-conjgrad(' + str(args.nbasis) + ')'      : color[3],
+            'kfac-woodbury-conjgrad-v1(' + str(args.nbasis) + ')' : color[4],
+            'kfac-woodbury-conjgrad-v2(' + str(args.nbasis) + ')' : color[5],
             }
 
     solid = ()
@@ -137,16 +149,22 @@ if __name__ == '__main__':
     dashed = (2, 2)
 
     dashes = {
-            'kfac'                                           : dotted,
-            'kfac-cgc(' + str(args.nbasis) + ')'             : dotted,
-            'kfac-cgc-m3(' + str(args.nbasis) + ')'          : dotted,
-            'kfac with mom'                                  : solid,
-            'kfac-cgc(' + str(args.nbasis) + ') with mom'    : solid,
-            'kfac-cgc-m3(' + str(args.nbasis) + ') with mom' : solid,
-            'conjgrad'                                       : dashed,
-            'kfac-conjgrad'                                  : dashed,
-            'kfac-cgc-conjgrad(' + str(args.nbasis) + ')'    : dashed,
-            'kfac-cgc-m3-conjgrad(' + str(args.nbasis) + ')' : dashed
+            'kfac'                                                : dotted,
+            'kfac-cgc(' + str(args.nbasis) + ')'                  : dotted,
+            'kfac-cgc-m3(' + str(args.nbasis) + ')'               : dotted,
+            'kfac-woodbury-v1(' + str(args.nbasis) + ')'          : dotted,
+            'kfac-woodbury-v2(' + str(args.nbasis) + ')'          : dotted,
+            'kfac with mom'                                       : solid,
+            'kfac-cgc(' + str(args.nbasis) + ') with mom'         : solid,
+            'kfac-cgc-m3(' + str(args.nbasis) + ') with mom'      : solid,
+            'kfac-woodbury-v1(' + str(args.nbasis) + ') with mom' : solid,
+            'kfac-woodbury-v2(' + str(args.nbasis) + ') with mom' : solid,
+            'conjgrad'                                            : dashed,
+            'kfac-conjgrad'                                       : dashed,
+            'kfac-cgc-conjgrad(' + str(args.nbasis) + ')'         : dashed,
+            'kfac-cgc-m3-conjgrad(' + str(args.nbasis) + ')'      : dashed,
+            'kfac-woodbury-conjgrad-v1(' + str(args.nbasis) + ')' : dashed,
+            'kfac-woodbury-conjgrad-v2(' + str(args.nbasis) + ')' : dashed,
             }
 
     sns.lineplot(data=df, x='iter', y=args.scalar, hue='optimizer', palette=palette, style='optimizer', dashes=dashes)
