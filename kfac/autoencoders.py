@@ -72,7 +72,7 @@ def default_config():
 
     config['weight_cost'] = 1e-5
 
-    config['gamma_update_interval'] = 20
+    config['gamma_update_interval'] = 5
     config['init_gamma'] = onp.sqrt(config['init_lambda'] + config['weight_cost'])
     config['gamma_drop'] = onp.sqrt(config['lambda_drop'])
     config['gamma_boost'] = 1 / config['gamma_drop']

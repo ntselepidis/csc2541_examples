@@ -575,13 +575,13 @@ def compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma):
                 arch.unflatten, state['ZZt'], grad_w, F_coarse, gamma)
 
 # Computes P*v = (I - F*Q)*v or P.transpose()*v = (I - Q*F)*v
-def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, chunk_size, transpose):
+def P(state, arch, output_model, w, X, T, F_coarse, gamma, v, chunk_size, weight_cost, transpose):
 
     # GGN-vector product
     mvp = lambda v: gnhvp(arch, output_model, w, X, T, v, chunk_size)
 
     # damped GGN-vector product
-    mvp_damp = kfac_util.dampen(mvp, gamma**2)
+    mvp_damp = kfac_util.dampen(mvp, state['lambda'] + weight_cost)
 
     if not transpose:
         Qv = compute_natgrad_correction_cgc(state, arch, v, F_coarse, gamma)
@@ -685,13 +685,15 @@ def update_lambda(arch, output_model, lmbda, old_w, new_w, X, T, quad_dec, confi
 def apply_preconditioner(state, arch, output_model, grad_w, X, T, F_coarse, gamma, config):
     if ('m1' in config['optimizer']) or ('m3' in config['optimizer']):
         P_fn = lambda v: P(state, arch, output_model, state['w'], X, T,
-                F_coarse, gamma, v, config['chunk_size'], transpose=False)
+                F_coarse, gamma, v, config['chunk_size'],
+                config['weight_cost'], transpose=False)
     else:
         P_fn = lambda v: v
 
     if ('m2' in config['optimizer']) or ('m3' in config['optimizer']):
         Pt_fn = lambda v: P(state, arch, output_model, state['w'], X, T,
-                F_coarse, gamma, v, config['chunk_size'], transpose=True)
+                F_coarse, gamma, v, config['chunk_size'],
+                config['weight_cost'], transpose=True)
     else:
         Pt_fn = lambda v: v
 
@@ -744,8 +746,9 @@ def cg_benchmark(state, arch, output_model, X, T, F_coarse, gamma, config, mvp_d
     # Compute initial estimate for two-level preconditioned CG
     Qb = compute_natgrad_correction_cgc(state, arch, grad_w, F_coarse, gamma)
 
-    Pt_fn = lambda v: P(state, arch, output_model, state['w'], X, T,
-            F_coarse, gamma, v, config['chunk_size'], transpose=True)
+    Pt_fn = lambda v: P(state, arch, output_model, state['w'], X, T, F_coarse,
+            gamma, v, config['chunk_size'], config['weight_cost'],
+            transpose=True)
 
     Qb_plus_Ptx0 = Qb + Pt_fn(x0)
 
@@ -931,7 +934,7 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
         mvp = lambda v: gnhvp(arch, output_model, state['w'], X_batch, T_batch, v, config['chunk_size'])
 
         # damped GGN-vector product
-        mvp_damp = kfac_util.dampen(mvp, gamma**2)
+        mvp_damp = kfac_util.dampen(mvp, state['lambda'] + config['weight_cost'])
 
         # initial estimate for current step
         if 'Qb' in config['optimizer']:
