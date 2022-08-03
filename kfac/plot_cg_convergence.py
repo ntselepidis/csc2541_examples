@@ -15,6 +15,7 @@ def get_args():
     parser.add_argument('--output', default='png', choices=['pdf', 'png'])
     parser.add_argument('--dpi', default=300)
     parser.add_argument('--force_format', default=0, choices=[0, 1], type=int)
+    parser.add_argument('--comment', default='default', type=str)
     args = parser.parse_args()
     return args
 
@@ -50,6 +51,7 @@ def main():
         'kfac-cgc-m3-Qb',
         'kfac-m3-Qb',
         'kfac-m2-Qb',
+        'kfac-woodbury-v2',
         'none-x0',
         'kfac-x0',
         'kfac-cgc-x0',
@@ -88,7 +90,8 @@ def main():
                     'kfac-cgc-m2-Qb(' + str(nbasis) + ')',
                     'kfac-cgc-m3(' + str(nbasis) + ')',
                     'kfac-m3-Qb(' + str(nbasis) + ')',
-                    'kfac-m2-Qb(' + str(nbasis) + ')'
+                    'kfac-m2-Qb(' + str(nbasis) + ')',
+                    'kfac-woodbury-v2(' + str(nbasis) + ')',
                     ],
                 ordered=True,
                 )
@@ -104,6 +107,7 @@ def main():
                 'kfac-cgc-m3(' + str(nbasis) + ')': color[3],
                 'kfac-m3-Qb(' + str(nbasis) + ')': color[6],
                 'kfac-m2-Qb(' + str(nbasis) + ')': color[7],
+                'kfac-woodbury-v2(' + str(nbasis) + ')': color[5],
                 }
 
     fig, axs = plt.subplots(1, 2, figsize=(2*6.4, 4.8))
@@ -124,7 +128,7 @@ def main():
     if args.logscale:
         axs[1].set_yscale('log')
 
-    plt.savefig(f'{args.filename[0:-4]}.{args.output}', dpi=args.dpi)
+    plt.savefig(f'{args.filename[0:-4]}_{args.comment}.{args.output}', dpi=args.dpi)
 
 if __name__ == '__main__':
     main()

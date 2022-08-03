@@ -36,12 +36,16 @@ def get_args():
     parser.add_argument('--dpi', default=300, type=int)
     parser.add_argument('--keep', default=None, type=str) # keep matches
     parser.add_argument('--drop', default=None, type=str) # drop matches
+    parser.add_argument('--skip_woodbury', default=1, choices=[0, 1], type=int)
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
 
     args = get_args()
+
+    if args.scalar == 'batch_size':
+        args.logscale = 0
 
     sns.set_style("darkgrid")
     fig = plt.figure()
@@ -66,6 +70,8 @@ if __name__ == '__main__':
 
         seed = int(comment[-1])
 
+        if args.skip_woodbury and ('woodbury' in optimizer):
+            continue
         if (args.keep != None) and (args.keep not in root):
             continue
         if (args.drop != None) and (args.drop in root):
