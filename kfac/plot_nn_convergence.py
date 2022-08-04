@@ -36,7 +36,7 @@ def get_args():
     parser.add_argument('--dpi', default=300, type=int)
     parser.add_argument('--keep', default=None, type=str) # keep matches
     parser.add_argument('--drop', default=None, type=str) # drop matches
-    parser.add_argument('--skip_woodbury', default=1, choices=[0, 1], type=int)
+    parser.add_argument('--skip_woodbury', default=0, choices=[0, 1], type=int)
     args = parser.parse_args()
     return args
 
