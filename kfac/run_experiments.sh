@@ -7,7 +7,7 @@ group=ls_math
 random_seed=0
 use_momentum=1
 init_lambda=150
-adapt_gamma=0
+adapt_gamma=1
 
 for experiment in "curves" "mnist"; do
 
