@@ -26,8 +26,8 @@ def main():
     print(f'Reading {args.filename} ...')
     df = pd.read_csv(args.filename)
 
-    experiment, nbasis, iteration = parse(
-            'cg_benchmarks/cg_benchmark_{}_nbasis-{}_default_GPU_cg_benchmark_0/iter-{}.csv', os.path.normpath(args.filename))
+    experiment, nbasis, adapt_gamma, _comment, iteration = parse(
+            'cg_benchmarks/cg_benchmark_{}_nbasis-{}_adapt-gamma-{}_{}_GPU_cg_benchmark_0/iter-{}.csv', os.path.normpath(args.filename))
 
     experiment, nbasis, iteration = experiment.upper(), int(nbasis), int(iteration) + 1
 
@@ -51,7 +51,7 @@ def main():
         'kfac-cgc-m3-Qb',
         'kfac-m3-Qb',
         'kfac-m2-Qb',
-        'kfac-woodbury-v2',
+        #'kfac-woodbury-v2',
         'none-x0',
         'kfac-x0',
         'kfac-cgc-x0',
