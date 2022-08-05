@@ -259,7 +259,10 @@ def run_training(X_train, X_test, arch, config):
         if (i+1) % config['conjgrad_benchmark_interval'] == 0:
             plot_conjgrad_convergence_to_tensorboard(writer, state['conjgrad_val'], state['conjgrad_relres'], 'conjgrad convergence plots', i)
             df = get_conjgrad_convergence_dataframe(state['conjgrad_val'], state['conjgrad_relres'])
-            dirname = 'cg_benchmark_' + config['experiment'] + '_nbasis-' + str(config['nbasis']) + '_' + config['comment'] + '_' + str(config['random_seed'])
+            dirname = 'cg_benchmark_' + config['experiment'] + \
+                    '_nbasis-' + str(config['nbasis']) + \
+                    '_adapt-gamma-' + str(config['adapt_gamma']) + '_' + \
+                    config['comment'] + '_' + str(config['random_seed'])
             os.makedirs(dirname, exist_ok=True)
             df.to_csv(f'{dirname}/iter-{i}.csv')
 

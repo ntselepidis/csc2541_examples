@@ -924,17 +924,17 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     new_w = [[] for _ in range(len(gammas))]
     results = []
 
+    # GGN-vector product
+    mvp = lambda v: gnhvp(arch, output_model, state['w'], X_batch, T_batch, v, config['chunk_size'])
+
+    # damped GGN-vector product
+    mvp_damp = kfac_util.dampen(mvp, state['lambda'] + config['weight_cost'])
+
     for idx, gamma in enumerate(gammas):
 
         # preconditioner
         precon = lambda grad_w: apply_preconditioner(state, arch, output_model,
                 grad_w, X_batch, T_batch, state['F_hat_coarse'], gamma, config)
-
-        # GGN-vector product
-        mvp = lambda v: gnhvp(arch, output_model, state['w'], X_batch, T_batch, v, config['chunk_size'])
-
-        # damped GGN-vector product
-        mvp_damp = kfac_util.dampen(mvp, state['lambda'] + config['weight_cost'])
 
         # initial estimate for current step
         if 'Qb' in config['optimizer']:
@@ -985,16 +985,17 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
             arch, output_model.nll_fn, new_w[idx], X_batch, T_batch,
             config['weight_cost'], config['chunk_size']))
 
-        # Run CG benchmark
-        if state['step'] % config['conjgrad_benchmark_interval'] == 0:
-            state['conjgrad_val'], state['conjgrad_relres'] = \
-            cg_benchmark(state, arch, output_model, X_batch, T_batch,
-                    state['F_hat_coarse'], gamma, config, mvp_damp, grad_w,
-                    config['conjgrad_tol'], config['conjgrad_maxiter'])
-
     # Store values for best_idx in state
     best_idx = onp.argmin(results)
     state['gamma'] = gammas[best_idx]
+
+    # Run CG benchmark
+    if state['step'] % config['conjgrad_benchmark_interval'] == 0:
+        state['conjgrad_val'], state['conjgrad_relres'] = \
+        cg_benchmark(state, arch, output_model, X_batch, T_batch,
+                state['F_hat_coarse'], state['gamma'], config, mvp_damp, grad_w,
+                config['conjgrad_tol'], config['conjgrad_maxiter'])
+
     #state['natgrad_w_pre_norm'] = natgrad_w_pre_norm[best_idx]
     #state['natgrad_w_corr_norm'] = natgrad_w_corr_norm[best_idx]
     state['coeffs'] = coeffs[best_idx]
