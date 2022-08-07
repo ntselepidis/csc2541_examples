@@ -16,6 +16,8 @@ def get_args():
     parser.add_argument('--dpi', default=300)
     parser.add_argument('--force_format', default=0, choices=[0, 1], type=int)
     parser.add_argument('--comment', default='default', type=str)
+    parser.add_argument('--ylim1', default=None, type=float)
+    parser.add_argument('--ylim2', default=None, type=float)
     args = parser.parse_args()
     return args
 
@@ -103,10 +105,10 @@ def main():
                 'kfac' : color[1],
                 'kfac-cgc(' + str(nbasis) + ')' : color[2],
                 'kfac-cgc-m1(' + str(nbasis) + ')': color[4],
-                'kfac-cgc-m2-Qb(' + str(nbasis) + ')': color[5],
+                'kfac-cgc-m2-Qb(' + str(nbasis) + ')': color[6],
                 'kfac-cgc-m3(' + str(nbasis) + ')': color[3],
-                'kfac-m3-Qb(' + str(nbasis) + ')': color[6],
-                'kfac-m2-Qb(' + str(nbasis) + ')': color[7],
+                'kfac-m3-Qb(' + str(nbasis) + ')': color[7],
+                'kfac-m2-Qb(' + str(nbasis) + ')': color[8],
                 'kfac-woodbury-v2(' + str(nbasis) + ')': color[5],
                 }
 
@@ -128,7 +130,12 @@ def main():
     if args.logscale:
         axs[1].set_yscale('log')
 
-    plt.savefig(f'{args.filename[0:-4]}_{args.comment}.{args.output}', dpi=args.dpi)
+    if args.ylim1 is not None:
+        axs[0].set_ylim(args.ylim1, 0.005)
+    if args.ylim2 is not None:
+        axs[1].set_ylim(0.0, args.ylim2)
+
+    plt.savefig(f'{args.filename[0:-4]}_nbasis-{nbasis}_{args.comment}.{args.output}', dpi=args.dpi)
 
 if __name__ == '__main__':
     main()
