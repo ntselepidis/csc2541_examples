@@ -43,13 +43,13 @@ def get_chunks(batch_size, chunk_size):
         start = end
 
 
-def gnhvp_core(apply_fn, unflatten_fn, nll_fn, w, X_chunk, T_chunk, vin, chunk_size):
+def gnhvp_helper(apply_fn, unflatten_fn, nll_fn, w, X_chunk, T_chunk, vin, chunk_size):
 
     mvp = lambda v: kfac_util.gnhvp_chunk(lambda w: apply_fn(unflatten_fn(w), X_chunk),
                                           lambda y: nll_fn(y, T_chunk), w, v)
     return mvp(vin)
 
-gnhvp_core = jit(gnhvp_core, static_argnums=(0,1,2))
+gnhvp_helper = jit(gnhvp_helper, static_argnums=(0,1,2))
 
 
 def gnhvp(arch, output_model, w, X, T, vin, chunk_size):
@@ -59,9 +59,7 @@ def gnhvp(arch, output_model, w, X, T, vin, chunk_size):
     for chunk_idxs in get_chunks(batch_size, chunk_size):
         X_chunk, T_chunk = X[chunk_idxs, :], T[chunk_idxs, :]
 
-        #mvp = lambda v: kfac_util.gnhvp_chunk(lambda w: arch.net_apply(arch.unflatten(w), X_chunk),
-        #                                      lambda y: output_model.nll_fn(y, T_chunk), w, v)
-        mvp = lambda v: gnhvp_core(arch.net_apply, arch.unflatten,
+        mvp = lambda v: gnhvp_helper(arch.net_apply, arch.unflatten,
                 output_model.nll_fn, w, X_chunk, T_chunk, v, chunk_size)
         vout += mvp(vin)
 
