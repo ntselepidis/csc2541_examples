@@ -17,7 +17,9 @@ def get_args():
                 'alpha',
                 'beta',
                 'gamma',
+                'gamma_squared',
                 'lambda',
+                'lambda_plus_eta',
                 'quadratic_decrease',
                 'training_error',
                 'training_error_avg',
@@ -89,9 +91,23 @@ if __name__ == '__main__':
         if int(momentum) == 1:
             optimizer = optimizer + ' with mom'
 
+        if args.scalar == 'gamma_squared':
+            _scalar = 'gamma'
+        elif args.scalar == 'lambda_plus_eta':
+            _scalar = 'lambda'
+        else:
+            _scalar = args.scalar
+
         event_acc = EventAccumulator(root)
         event_acc.Reload()
-        times, iters, values = zip(*event_acc.Scalars('data/' + args.scalar))
+        times, iters, values = zip(*event_acc.Scalars('data/' + _scalar))
+
+        if args.scalar == 'gamma_squared':
+            values = tuple( np.array(values)**2 )
+        elif args.scalar == 'lambda_plus_eta':
+            values = tuple( np.array(values) + 1e-5 )
+        else:
+            pass
 
         ndata = len(iters)
 
@@ -181,6 +197,9 @@ if __name__ == '__main__':
 
     if args.logscale:
         ax.set_yscale('log')
+
+    if args.scalar == 'batch_size':
+        plt.legend([],[], frameon=False)
 
     output_dir = f'nn_convergence_plots_{os.path.basename(os.path.normpath(args.logdir))}'
     output_file = f'{args.scalar}_mom-{args.momentum}_nbasis-{args.nbasis}_iter-stop-{args.iter_stop}_logscale-{args.logscale}'
