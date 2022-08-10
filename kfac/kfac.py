@@ -872,7 +872,10 @@ def kfac_iter(state, arch, output_model, X_train, T_train, config):
     state['step'] += 1
 
     ndata = X_train.shape[0]
-    batch_size = get_batch_size(state['step'], ndata, config)
+    if config['batch_size_schedule'] == 1:
+        batch_size = get_batch_size(state['step'], ndata, config)
+    else:
+        batch_size = ndata
     state['batch_size'] = batch_size
     
     # Sample with replacement

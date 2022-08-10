@@ -44,6 +44,7 @@ def run(args):
     config['conjgrad_benchmark_interval'] = args.conjgrad_benchmark_interval
     config['nbasis'] = args.nbasis
     config['conjgrad_maxiter'] = args.conjgrad_maxiter
+    config['batch_size_schedule'] = args.batch_size_schedule
     autoencoders.run_training(X_train, X_test, arch, config)
 
 
@@ -59,6 +60,7 @@ if __name__ == '__main__':
     parser.add_argument('--conjgrad_benchmark_interval', default=20010, type=int)
     parser.add_argument('--nbasis', default=1, type=int)
     parser.add_argument('--conjgrad_maxiter', default=5, type=int)
+    parser.add_argument('--batch_size_schedule', default=1, type=int)
     args = parser.parse_args()
     run(args)
 

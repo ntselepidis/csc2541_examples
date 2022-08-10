@@ -56,6 +56,7 @@ def default_config():
     config['final_batch_size_iter'] = 500
     config['batch_size_granularity'] = 50
     config['chunk_size'] = 5000
+    config['batch_size_schedule'] = 1
     
     config['cov_update_interval'] = 1
     config['cov_batch_ratio'] = 1/8
